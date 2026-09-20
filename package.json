@@ -1,0 +1,21 @@
+{
+  "name": "daily-expense-tracker",
+  "version": "1.0.0",
+  "description": "Daily Budget and Expense Tracker with Automated Email and SMS Reminders",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.10.0"
+  },
+  "keywords": ["expense", "budget", "reminder", "tracker", "email", "sms"],
+  "author": "",
+  "license": "ISC"
+}
