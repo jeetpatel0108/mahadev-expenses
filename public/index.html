@@ -186,11 +186,12 @@
             />
           </div>
           <div>
-            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">Mobile Phone (for SMS)</label>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">Mobile Phone (10-Digit for SMS OTP) *</label>
             <input
-              type="text"
+              type="tel"
               id="regPhone"
-              placeholder="+91 9876543210"
+              required
+              placeholder="9876543210"
               class="w-full px-3.5 py-2 rounded-xl bg-slate-900/90 border border-slate-700/80 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
             />
           </div>
@@ -258,11 +259,11 @@
         <!-- Step 1: Request OTP -->
         <form id="forgotOtpRequestForm" class="space-y-3.5">
           <p class="text-xs text-slate-300">
-            Enter your registered username, email, or mobile number. We will dispatch a <strong>6-digit OTP verification code</strong> to reset your password.
+            Enter your registered username, email, or mobile number. We will dispatch a <strong>6-digit OTP verification code directly to your mobile phone via SMS</strong>.
           </p>
 
           <div>
-            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">Username, Email, or Phone</label>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">Username, Email, or Mobile Phone</label>
             <div class="relative">
               <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500">
                 <i data-lucide="shield-check" class="w-4 h-4"></i>
@@ -271,7 +272,7 @@
                 type="text"
                 id="forgotIdentifier"
                 required
-                placeholder="e.g. rajesh99 or your email"
+                placeholder="e.g. rajesh99 or mobile number"
                 class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700/80 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -283,26 +284,29 @@
             class="w-full py-3 px-4 rounded-xl btn-3d text-white font-semibold text-sm flex items-center justify-center gap-2"
           >
             <i data-lucide="send" class="w-4 h-4"></i>
-            <span>Send 6-Digit OTP</span>
+            <span>Send 6-Digit OTP via SMS</span>
           </button>
         </form>
 
         <!-- Step 2: Verify OTP & Enter New Password (Appears after OTP is sent) -->
         <form id="forgotResetPasswordForm" class="space-y-3.5 hidden">
-          <div class="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs">
-            <span id="otpSentTargetText">OTP has been dispatched! Enter the 6-digit code below.</span>
+          <div class="p-3.5 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs flex items-start gap-2">
+            <i data-lucide="smartphone" class="w-4 h-4 text-indigo-400 mt-0.5 shrink-0"></i>
+            <span id="otpSentTargetText">📲 6-Digit OTP code has been dispatched to your mobile phone via SMS. Please enter the code below.</span>
           </div>
 
           <div>
-            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">6-Digit OTP Code</label>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">Enter 6-Digit OTP from Mobile SMS *</label>
             <input
               type="text"
               id="otpInputCode"
               required
               maxlength="6"
-              placeholder="123456"
+              placeholder="• • • • • •"
+              autocomplete="one-time-code"
               class="w-full py-3 rounded-xl bg-slate-900/90 border border-slate-700/80 text-indigo-400 font-mono text-center text-2xl font-bold tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
+            <p class="text-[11px] text-slate-400 mt-1 text-center">Type the 6-digit code received on your mobile phone</p>
           </div>
 
           <div>
@@ -771,20 +775,57 @@
           <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300">Your Alert Destinations</label>
           
           <!-- SMS -->
-          <div class="p-3.5 rounded-2xl bg-slate-900/80 border border-indigo-500/30 space-y-2">
+          <div class="p-3.5 rounded-2xl bg-slate-900/80 border border-indigo-500/30 space-y-3">
             <div class="flex items-center justify-between">
               <label class="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" id="setNotifySms" class="w-4 h-4 text-indigo-600 rounded bg-slate-800 border-slate-700 focus:ring-indigo-500" checked>
-                <span class="text-xs font-bold text-slate-200">SMS / Text Message Alerts</span>
+                <span class="text-xs font-bold text-slate-200">Real SMS / Mobile Text Alerts</span>
               </label>
-              <span class="text-[11px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-semibold">Active</span>
+              <span class="text-[11px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
+                <i data-lucide="smartphone" class="w-3 h-3"></i> Mobile SMS
+              </span>
             </div>
-            <input
-              type="text"
-              id="setRecipientPhone"
-              placeholder="+91 9876543210 (Mobile Number)"
-              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
-            />
+            <div>
+              <label class="block text-[11px] uppercase tracking-wider text-slate-400 mb-1">Your 10-Digit Mobile Number (India +91)</label>
+              <input
+                type="text"
+                id="setRecipientPhone"
+                placeholder="9876543210 (10 digits)"
+                class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono font-bold"
+              />
+            </div>
+
+            <!-- Fast2SMS Gateway Configuration -->
+            <div class="pt-2 border-t border-slate-800/80">
+              <div class="flex items-center justify-between mb-1">
+                <label class="block text-[11px] uppercase tracking-wider text-amber-300 font-semibold flex items-center gap-1">
+                  <i data-lucide="key" class="w-3 h-3"></i> Fast2SMS API Key (Instant SMS Gateway)
+                </label>
+                <a href="https://www.fast2sms.com" target="_blank" rel="noopener noreferrer" class="text-[11px] text-indigo-400 hover:text-indigo-300 underline flex items-center gap-0.5">
+                  Get Free Key <i data-lucide="external-link" class="w-3 h-3"></i>
+                </a>
+              </div>
+              <input
+                type="password"
+                id="setFast2smsApiKey"
+                placeholder="Paste your Fast2SMS authorization key"
+                class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-amber-500/30 text-xs text-amber-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
+              />
+              <p class="text-[10px] text-slate-400 mt-1">
+                Delivers OTP & daily expense balance text directly to your mobile. Free signup on <span class="text-slate-300">fast2sms.com</span> &rarr; Dev API.
+              </p>
+            </div>
+
+            <div class="pt-1 flex items-center justify-end">
+              <button
+                type="button"
+                id="btnTestSmsNow"
+                class="px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-xs font-semibold border border-indigo-500/30 flex items-center gap-1 transition"
+              >
+                <i data-lucide="send" class="w-3 h-3"></i>
+                <span>Send Test SMS to My Mobile</span>
+              </button>
+            </div>
           </div>
 
           <!-- Email -->

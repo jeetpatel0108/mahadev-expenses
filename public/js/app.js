@@ -246,13 +246,8 @@ function setupAuthTabsAndForms() {
         document.getElementById('forgotOtpRequestForm').classList.add('hidden');
         document.getElementById('forgotResetPasswordForm').classList.remove('hidden');
         document.getElementById('otpSentTargetText').textContent = data.message;
-        
-        let alertMsg = `✅ ${data.message}`;
-        if (data.simulatedOtp) {
-          alertMsg += ` <br><span class="font-mono text-amber-300 font-bold">Verification OTP: ${data.simulatedOtp}</span>`;
-          document.getElementById('otpInputCode').value = data.simulatedOtp;
-        }
-        showAuthAlert(alertMsg, 'success');
+        document.getElementById('otpInputCode').value = '';
+        showAuthAlert(`📲 ${data.message}`, 'success');
       } else {
         showAuthAlert(data.error || 'User not found.');
       }
@@ -922,6 +917,9 @@ function setupModals() {
       document.getElementById('setReminderTime').value = s.reminderTime || '20:30';
       document.getElementById('setRecipientEmail').value = s.recipientEmail || s.email || '';
       document.getElementById('setRecipientPhone').value = s.recipientPhone || s.phone || '';
+      if (document.getElementById('setFast2smsApiKey')) {
+        document.getElementById('setFast2smsApiKey').value = s.fast2smsApiKey || '';
+      }
       document.getElementById('setNotifyEmail').checked = Boolean(s.notifyEmail);
       document.getElementById('setNotifySms').checked = Boolean(s.notifySms);
       settingsModal.classList.remove('hidden');
@@ -946,6 +944,7 @@ function setupModals() {
       reminderTime: document.getElementById('setReminderTime').value,
       recipientEmail: document.getElementById('setRecipientEmail').value,
       recipientPhone: document.getElementById('setRecipientPhone').value,
+      fast2smsApiKey: document.getElementById('setFast2smsApiKey')?.value.trim() || '',
       notifyEmail: document.getElementById('setNotifyEmail').checked,
       notifySms: document.getElementById('setNotifySms').checked
     };
@@ -966,6 +965,7 @@ function setupModals() {
   });
 
   document.getElementById('btnTestReminderNow')?.addEventListener('click', sendTestReminder);
+  document.getElementById('btnTestSmsNow')?.addEventListener('click', sendTestSms);
 
   // 3. Report Modal
   document.getElementById('btnCloseReportModal')?.addEventListener('click', () => {
@@ -992,6 +992,32 @@ async function sendTestReminder() {
       window.open(data.email.previewUrl, '_blank');
     }
     showToast(msg, 'success');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function sendTestSms() {
+  const phone = document.getElementById('setRecipientPhone')?.value.trim();
+  const fast2smsApiKey = document.getElementById('setFast2smsApiKey')?.value.trim();
+  if (!phone) {
+    showToast('Please enter your 10-digit mobile number above.', 'warning');
+    return;
+  }
+
+  showToast('Dispatching test SMS directly to your phone...', 'info');
+  try {
+    const res = await authFetch('/api/notifications/test-sms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, fast2smsApiKey })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(data.message || 'Test SMS sent!', 'success');
+    } else {
+      showToast(data.error || 'Failed to dispatch test SMS', 'error');
+    }
   } catch (err) {
     showToast(err.message, 'error');
   }

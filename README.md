@@ -1,6 +1,18 @@
-# 💰 SpendWise - Daily Budget & Expense Tracker with Automated Reminders
+# 💰 Daily Expenses - Multi-User 3D Budget & Expense Tracker with Real SMS
 
-A complete, self-contained personal and event finance tracker designed to help you set a target budget, record daily spending, view instant financial analytics, and receive **automated Email and SMS reminders** if you forget to log your daily expenses or generate your daily report.
+A complete, multi-user personal and business expense tracker with 3D glassmorphism interface, isolated user accounts, and **real SMS notifications to mobile phones** (Fast2SMS for India + Twilio for Global).
+
+---
+
+## 🔐 Authentication & Real Mobile SMS Security
+- **Secure Accounts**: Each user has an isolated account with private budget, expenses, and settings.
+- **Forgot Password with Direct Mobile SMS OTP**: 6-digit OTP verification codes are dispatched **directly to the user's mobile phone via SMS**. The OTP is **never** shown on the website screen or exposed in API responses.
+- **Instant Expense Locked SMS**: Whenever an expense is saved, a text message is dispatched:
+  `"YOUR EXPENSE OF TODAY IS LOCKED AND AVAILABLE BALANCE IS ₹..."`
+- **SMS Gateways Supported**:
+  - **Fast2SMS**: Free/Instant SMS to any 10-digit Indian mobile number (`+91`). Dedicated `route=otp` for instant telecom OTP delivery.
+  - **Twilio**: Global SMS delivery.
+- **Dedicated Test SMS Button**: Click **"Send Test SMS to My Mobile"** in Settings to instantly test SMS delivery.
 
 ---
 

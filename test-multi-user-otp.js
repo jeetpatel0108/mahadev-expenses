@@ -1,3 +1,10 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 async function runTests() {
   const base = 'http://127.0.0.1:4000';
   console.log('--- 🧪 STARTING MULTI-USER & OTP VERIFICATION TESTS ---');
@@ -62,7 +69,7 @@ async function runTests() {
   console.log('3. Data Isolation Check:');
   console.log('   - Did admin see jeet\'s expense?:', foundJeetExpense, !foundJeetExpense ? '✅ PASS (100% Isolated)' : '❌ FAIL');
 
-  // Test 4: Forgot Password Flow with 6-Digit OTP
+  // Test 4: Forgot Password Flow with 6-Digit OTP Dispatched via SMS
   const forgotRes = await fetch(`${base}/api/auth/forgot-password`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -72,9 +79,13 @@ async function runTests() {
   console.log('4. Forgot Password OTP Request:');
   console.log('   - Status:', forgotRes.status);
   console.log('   - Message:', forgotData.message);
-  console.log('   - Generated OTP:', forgotData.simulatedOtp);
+  console.log('   - Simulated OTP Leaked in API?:', Boolean(forgotData.simulatedOtp), !forgotData.simulatedOtp ? '✅ PASS (Protected, Not Exposed on Screen)' : '❌ FAIL (Security Leak)');
 
-  const otp = forgotData.simulatedOtp;
+  // Retrieve OTP securely from database as simulating delivery to the user's phone via SMS
+  const dbData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'db.json'), 'utf8'));
+  const userOtpRecord = (dbData.otps || []).find(o => o.userId === regData.user.id && !o.used);
+  const otp = userOtpRecord ? userOtpRecord.otp : null;
+  console.log('   - OTP received at user phone:', otp ? `✅ ${otp}` : '❌ NOT FOUND');
 
   // Test 5: Verify Invalid OTP is rejected
   const badOtpRes = await fetch(`${base}/api/auth/verify-otp`, {

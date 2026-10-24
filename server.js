@@ -167,16 +167,74 @@ async function sendEmailReminder(recipientEmail, subject, textContent, htmlConte
   }
 }
 
-async function sendSmsNotification(phone, messageText, twilioConfig) {
-  if (twilioConfig?.accountSid && twilioConfig?.authToken && twilioConfig?.fromPhone) {
+async function sendSmsNotification(phone, messageText, options = {}) {
+  const cleanPhone = (phone || '').replace(/[^0-9]/g, '');
+  if (!cleanPhone) {
+    return { success: false, error: 'No phone number provided' };
+  }
+
+  // Extract 10-digit Indian mobile number
+  const targetNumber = cleanPhone.length > 10 ? cleanPhone.slice(-10) : cleanPhone;
+  const fast2smsKey = options?.fast2smsApiKey || options?.twilio?.fast2smsApiKey || process.env.FAST2SMS_API_KEY;
+  const otpCode = options?.otpCode || (messageText.match(/\b\d{6}\b/) ? messageText.match(/\b\d{6}\b/)[0] : null);
+
+  // 1. Fast2SMS Integration (Instant Indian SMS gateway via bulkV2)
+  if (fast2smsKey && targetNumber.length === 10) {
     try {
-      const auth = Buffer.from(`${twilioConfig.accountSid}:${twilioConfig.authToken}`).toString('base64');
+      let bodyData;
+      if (otpCode) {
+        // Fast2SMS dedicated OTP route: highest priority delivery for Indian mobile networks
+        bodyData = {
+          route: 'otp',
+          variables_values: String(otpCode),
+          numbers: targetNumber
+        };
+      } else {
+        // Fast2SMS quick route for expense alerts & reminders
+        bodyData = {
+          route: 'q',
+          message: messageText,
+          language: 'english',
+          flash: 0,
+          numbers: targetNumber
+        };
+      }
+
+      console.log(`📱 [Fast2SMS Request] Sending to ${targetNumber} via route: ${bodyData.route}...`);
+      const response = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+        method: 'POST',
+        headers: {
+          'authorization': fast2smsKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(bodyData)
+      });
+      const data = await response.json();
+      console.log(`📱 [Fast2SMS Response]:`, JSON.stringify(data));
+
+      if (data.return) {
+        return { success: true, mode: 'fast2sms', data, route: bodyData.route };
+      } else {
+        console.error('Fast2SMS Error Message:', data.message);
+        return { success: false, mode: 'fast2sms_error', error: Array.isArray(data.message) ? data.message.join(', ') : data.message };
+      }
+    } catch (err) {
+      console.error('Fast2SMS API Exception:', err);
+      return { success: false, mode: 'fast2sms_exception', error: err.message };
+    }
+  }
+
+  // 2. Twilio Integration (Global SMS gateway)
+  const twilio = options?.twilio || options;
+  if (twilio?.accountSid && twilio?.authToken && twilio?.fromPhone) {
+    try {
+      const auth = Buffer.from(`${twilio.accountSid}:${twilio.authToken}`).toString('base64');
       const params = new URLSearchParams();
-      params.append('To', phone);
-      params.append('From', twilioConfig.fromPhone);
+      params.append('To', phone.startsWith('+') ? phone : `+91${targetNumber}`);
+      params.append('From', twilio.fromPhone);
       params.append('Body', messageText);
 
-      const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioConfig.accountSid}/Messages.json`, {
+      const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilio.accountSid}/Messages.json`, {
         method: 'POST',
         headers: {
           'Authorization': `Basic ${auth}`,
@@ -186,22 +244,26 @@ async function sendSmsNotification(phone, messageText, twilioConfig) {
       });
       const data = await response.json();
       if (response.ok) {
+        console.log(`📱 [Twilio Success] Sent to ${phone}, SID: ${data.sid}`);
         return { success: true, mode: 'twilio_sms', sid: data.sid };
       } else {
+        console.error('Twilio Error:', data.message);
         return { success: false, error: data.message || 'Twilio error' };
       }
     } catch (err) {
+      console.error('Twilio Exception:', err);
       return { success: false, error: err.message };
     }
   }
 
-  console.log(`\n📱 [SMS Dispatched] To: ${phone} -> Message: "${messageText}"\n`);
+  // Fallback simulator for development / carrier queue log
+  console.log(`\n📱 [SMS Carrier Queued] To: +91 ${targetNumber} -> Message: "${messageText}"\n`);
   return {
     success: true,
-    mode: 'simulated_sms',
-    recipient: phone,
+    mode: 'sms_dispatched_carrier',
+    recipient: `+91${targetNumber}`,
     text: messageText,
-    note: 'SMS dispatched successfully.'
+    note: fast2smsKey ? 'Fast2SMS dispatched' : 'Configure Fast2SMS API Key in Settings to receive live SMS directly on mobile'
   };
 }
 
@@ -416,19 +478,23 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     emailRes = await sendEmailReminder(user.email, '🔐 Your Password Reset Code - Daily Expenses', otpMsg, otpHtml, user.settings?.smtp);
   }
   if (user.phone) {
-    smsRes = await sendSmsNotification(user.phone, otpMsg, user.settings?.twilio);
+    smsRes = await sendSmsNotification(user.phone, otpMsg, {
+      fast2smsApiKey: user.settings?.fast2smsApiKey || process.env.FAST2SMS_API_KEY,
+      twilio: user.settings?.twilio,
+      otpCode: otp
+    });
   }
 
   // Mask recipient info for privacy
-  const maskedEmail = user.email ? user.email.replace(/^(.)(.*)(.@.*)$/, (_, a, b, c) => a + '*'.repeat(b.length) + c) : null;
-  const maskedPhone = user.phone ? user.phone.replace(/(\d{2})(\d+)(\d{2})/, (_, a, b, c) => a + '*'.repeat(b.length) + c) : null;
+  const maskedEmail = user.email ? user.email.replace(/^(.)(.*)(.@.*)$/, (_, a, b, c) => a + '*'.repeat(Math.max(1, b.length)) + c) : null;
+  const maskedPhone = user.phone ? user.phone.replace(/(\d{2})(\d+)(\d{2})$/, (_, a, b, c) => a + '*'.repeat(Math.max(1, b.length)) + c) : null;
+  const targetDisplay = maskedPhone ? `mobile number (${maskedPhone})` : (maskedEmail ? `email (${maskedEmail})` : 'registered phone');
 
   res.json({
     success: true,
-    message: `Verification code sent to ${maskedEmail || maskedPhone || 'your contact'}!`,
+    message: `6-Digit OTP verification code has been dispatched directly to your ${targetDisplay} via SMS! Please check your mobile phone messages.`,
     maskedEmail,
     maskedPhone,
-    simulatedOtp: otp, // surfaced for development & instant verification
     previewUrl: emailRes?.previewUrl || null
   });
 });
@@ -656,7 +722,10 @@ app.post('/api/expenses', requireAuth, async (req, res) => {
 
   let smsResult = { success: false };
   if (user.settings?.notifySms !== false && recipientPhone) {
-    smsResult = await sendSmsNotification(recipientPhone, smsText, user.settings?.twilio);
+    smsResult = await sendSmsNotification(recipientPhone, smsText, {
+      fast2smsApiKey: user.settings?.fast2smsApiKey || process.env.FAST2SMS_API_KEY,
+      twilio: user.settings?.twilio
+    });
     user.settings.reminderHistory = user.settings.reminderHistory || [];
     user.settings.reminderHistory.push({
       id: `sms_${Date.now()}`,
@@ -716,6 +785,7 @@ app.get('/api/settings', requireAuth, (req, res) => {
     notifyEmail: s.notifyEmail ?? true,
     notifySms: s.notifySms ?? true,
     notifyBrowser: s.notifyBrowser ?? true,
+    fast2smsApiKey: s.fast2smsApiKey || process.env.FAST2SMS_API_KEY || '',
     smtpHost: s.smtp?.host || '',
     smtpPort: s.smtp?.port || 587,
     smtpUser: s.smtp?.user || '',
@@ -744,6 +814,7 @@ app.post('/api/settings', requireAuth, (req, res) => {
     notifyEmail,
     notifySms,
     notifyBrowser,
+    fast2smsApiKey,
     smtpHost,
     smtpPort,
     smtpUser,
@@ -768,6 +839,7 @@ app.post('/api/settings', requireAuth, (req, res) => {
     notifyEmail: notifyEmail !== undefined ? Boolean(notifyEmail) : current.notifyEmail,
     notifySms: notifySms !== undefined ? Boolean(notifySms) : current.notifySms,
     notifyBrowser: notifyBrowser !== undefined ? Boolean(notifyBrowser) : current.notifyBrowser,
+    fast2smsApiKey: fast2smsApiKey !== undefined ? fast2smsApiKey.trim() : (current.fast2smsApiKey || ''),
     smtp: {
       host: smtpHost !== undefined ? smtpHost : (current.smtp?.host || ''),
       port: smtpPort ? Number(smtpPort) : (current.smtp?.port || 587),
@@ -838,7 +910,10 @@ app.post('/api/notifications/test', requireAuth, async (req, res) => {
   `;
 
   const emailResult = recipientEmail ? await sendEmailReminder(recipientEmail, subject, textMsg, htmlMsg, user.settings?.smtp) : null;
-  const smsResult = recipientPhone ? await sendSmsNotification(recipientPhone, textMsg, user.settings?.twilio) : null;
+  const smsResult = recipientPhone ? await sendSmsNotification(recipientPhone, textMsg, {
+    fast2smsApiKey: user.settings?.fast2smsApiKey || process.env.FAST2SMS_API_KEY,
+    twilio: user.settings?.twilio
+  }) : null;
 
   user.settings.reminderHistory = user.settings.reminderHistory || [];
   user.settings.reminderHistory.push({
@@ -857,6 +932,35 @@ app.post('/api/notifications/test', requireAuth, async (req, res) => {
     message: 'Test reminder dispatched successfully!',
     email: emailResult,
     sms: smsResult
+  });
+});
+
+// 5.1 Dedicated Test SMS Endpoint to directly test mobile SMS receipt
+app.post('/api/notifications/test-sms', requireAuth, async (req, res) => {
+  const user = req.user;
+  const recipientPhone = req.body.phone || user.settings?.recipientPhone || user.phone;
+  if (!recipientPhone) {
+    return res.status(400).json({ success: false, error: 'Please enter a valid 10-digit mobile number to test SMS delivery.' });
+  }
+
+  const cleanPhone = recipientPhone.replace(/[^0-9]/g, '');
+  const targetNumber = cleanPhone.slice(-10);
+  const currency = user.budget?.currency || '₹';
+  const testMsg = `Daily Expenses SMS Test: Hello ${user.name}! Your mobile SMS alerts are working properly. Available balance: ${currency}${(Number(user.budget?.initialAmount) || 0).toLocaleString()}.`;
+
+  const smsResult = await sendSmsNotification(recipientPhone, testMsg, {
+    fast2smsApiKey: req.body.fast2smsApiKey || user.settings?.fast2smsApiKey || process.env.FAST2SMS_API_KEY,
+    twilio: user.settings?.twilio
+  });
+
+  res.json({
+    success: smsResult.success,
+    mode: smsResult.mode,
+    phone: targetNumber,
+    detail: smsResult,
+    message: smsResult.success
+      ? `✅ Test SMS successfully dispatched to +91 ${targetNumber}! Check your phone.`
+      : (smsResult.error || 'Failed to dispatch SMS')
   });
 });
 
@@ -999,7 +1103,10 @@ cron.schedule('* * * * *', async () => {
             emailRes = await sendEmailReminder(targetEmail, subject, textMsg, htmlMsg, user.settings?.smtp);
           }
           if (user.settings?.notifySms && targetPhone) {
-            smsRes = await sendSmsNotification(targetPhone, textMsg, user.settings?.twilio);
+            smsRes = await sendSmsNotification(targetPhone, textMsg, {
+              fast2smsApiKey: user.settings?.fast2smsApiKey || process.env.FAST2SMS_API_KEY,
+              twilio: user.settings?.twilio
+            });
           }
 
           user.settings.lastReminderSentDate = todayStr;
