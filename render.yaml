@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: mahadev-expenses
+    name: daily-expenses
     runtime: node
     plan: free
     region: singapore

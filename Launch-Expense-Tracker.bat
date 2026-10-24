@@ -3,7 +3,7 @@ title Daily Budget & Expense Tracker Server
 color 0B
 
 echo ========================================================
-echo    Starting SpendWise - Daily Budget & Expense Tracker
+echo    Starting Daily Expenses - Budget & Spending Tracker
 echo ========================================================
 echo.
 
