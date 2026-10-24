@@ -14,55 +14,51 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 const DB_FILE = path.join(__dirname, 'data', 'db.json');
 
-// In-memory active auth tokens set
-const activeTokens = new Set();
+// In-memory active auth sessions map: token -> userId
+const activeSessions = new Map();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Helpers to read/write JSON Database
+// Database helper functions
 function getDb() {
   try {
     if (!fs.existsSync(DB_FILE)) {
       const initialDb = {
-        budget: {
-          initialAmount: 30000,
-          currency: '₹',
-          currencyCode: 'INR',
-          month: 'Current Period',
-          notes: 'Daily Budget Allowance'
-        },
-        settings: {
-          auth: {
+        users: [
+          {
+            id: 'usr_admin_default',
+            name: 'Admin Manager',
             username: 'admin',
+            email: 'mybudgetalerts@gmail.com',
+            phone: '+919876543210',
             password: '1234',
-            requireLogin: true
-          },
-          reminderEnabled: true,
-          reminderTime: '20:30',
-          recipientEmail: 'alerts@example.com',
-          recipientPhone: '+919876543210',
-          notifyEmail: true,
-          notifySms: true,
-          notifyBrowser: true,
-          smtp: {
-            host: '',
-            port: 587,
-            secure: false,
-            user: '',
-            pass: '',
-            from: 'Budget Tracker <no-reply@budgettracker.local>'
-          },
-          twilio: {
-            accountSid: '',
-            authToken: '',
-            fromPhone: ''
-          },
-          lastReminderSentDate: null,
-          reminderHistory: []
-        },
+            budget: {
+              initialAmount: 30000,
+              currency: '₹',
+              currencyCode: 'INR',
+              month: 'Current Period',
+              notes: 'Monthly Allowance'
+            },
+            settings: {
+              reminderEnabled: true,
+              reminderTime: '20:30',
+              recipientEmail: 'mybudgetalerts@gmail.com',
+              recipientPhone: '+919876543210',
+              notifyEmail: true,
+              notifySms: true,
+              notifyBrowser: true,
+              smtp: { host: '', port: 587, secure: false, user: '', pass: '', from: 'Daily Expenses <no-reply@expensetracker.local>' },
+              twilio: { accountSid: '', authToken: '', fromPhone: '' },
+              lastReminderSentDate: null,
+              reminderHistory: []
+            },
+            createdAt: new Date().toISOString()
+          }
+        ],
+        otps: [],
         expenses: [],
         reports: []
       };
@@ -74,7 +70,7 @@ function getDb() {
     return JSON.parse(data);
   } catch (err) {
     console.error('Error reading database:', err);
-    return { budget: {}, settings: {}, expenses: [], reports: [] };
+    return { users: [], otps: [], expenses: [], reports: [] };
   }
 }
 
@@ -107,8 +103,15 @@ function requireAuth(req, res, next) {
     token = req.query.token;
   }
 
-  if (token && activeTokens.has(token)) {
-    return next();
+  if (token && activeSessions.has(token)) {
+    const userId = activeSessions.get(token);
+    const db = getDb();
+    const user = (db.users || []).find(u => u.id === userId);
+    if (user) {
+      req.user = user;
+      req.token = token;
+      return next();
+    }
   }
 
   return res.status(401).json({
@@ -117,46 +120,34 @@ function requireAuth(req, res, next) {
   });
 }
 
-// Notification Dispatcher
+// Email & SMS dispatchers
 async function sendEmailReminder(recipientEmail, subject, textContent, htmlContent, smtpConfig) {
   try {
     let transporter;
-    
-    // Check if custom SMTP provided
     if (smtpConfig && smtpConfig.host && smtpConfig.user && smtpConfig.pass) {
       transporter = nodemailer.createTransport({
         host: smtpConfig.host,
         port: Number(smtpConfig.port) || 587,
         secure: Boolean(smtpConfig.secure),
-        auth: {
-          user: smtpConfig.user,
-          pass: smtpConfig.pass
-        }
+        auth: { user: smtpConfig.user, pass: smtpConfig.pass }
       });
     } else if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       transporter = nodemailer.createTransport({
         service: 'gmail',
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS
-        }
+        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
       });
     } else {
-      // Fallback to test ethereal account for preview
       const testAccount = await nodemailer.createTestAccount();
       transporter = nodemailer.createTransport({
         host: 'smtp.ethereal.email',
         port: 587,
         secure: false,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass
-        }
+        auth: { user: testAccount.user, pass: testAccount.pass }
       });
     }
 
     const info = await transporter.sendMail({
-      from: smtpConfig?.from || '"Daily Budget & Expense Tracker" <reminder@expensetracker.local>',
+      from: smtpConfig?.from || '"Daily Expenses" <reminder@expensetracker.local>',
       to: recipientEmail,
       subject: subject,
       text: textContent,
@@ -177,7 +168,6 @@ async function sendEmailReminder(recipientEmail, subject, textContent, htmlConte
 }
 
 async function sendSmsNotification(phone, messageText, twilioConfig) {
-  // If Twilio credentials are configured, execute Twilio API call
   if (twilioConfig?.accountSid && twilioConfig?.authToken && twilioConfig?.fromPhone) {
     try {
       const auth = Buffer.from(`${twilioConfig.accountSid}:${twilioConfig.authToken}`).toString('base64');
@@ -205,8 +195,7 @@ async function sendSmsNotification(phone, messageText, twilioConfig) {
     }
   }
 
-  // Simulated SMS logger (returns instant confirmation for UI display)
-  console.log(`\n📱 [SMS Notification Sent] To: ${phone}\nMessage: "${messageText}"\n`);
+  console.log(`\n📱 [SMS Dispatched] To: ${phone} -> Message: "${messageText}"\n`);
   return {
     success: true,
     mode: 'simulated_sms',
@@ -217,119 +206,364 @@ async function sendSmsNotification(phone, messageText, twilioConfig) {
 }
 
 // -------------------------------------------------------------
-// Authentication Endpoints (Public)
+// Authentication & Multi-User APIs (Public)
 // -------------------------------------------------------------
 
+// 1. User Registration / Sign Up
+app.post('/api/auth/register', (req, res) => {
+  const { name, username, email, phone, password, initialAmount, currency } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ success: false, error: 'Username and password are required.' });
+  }
+
+  const cleanUsername = username.trim().toLowerCase();
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const db = getDb();
+  db.users = db.users || [];
+
+  // Check uniqueness
+  const existing = db.users.find(u => 
+    u.username.toLowerCase() === cleanUsername || 
+    (cleanEmail && u.email && u.email.toLowerCase() === cleanEmail)
+  );
+
+  if (existing) {
+    return res.status(400).json({ success: false, error: 'Username or Email is already registered. Please choose another or Sign In.' });
+  }
+
+  const newUserId = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const newUser = {
+    id: newUserId,
+    name: name ? name.trim() : cleanUsername,
+    username: cleanUsername,
+    email: cleanEmail || '',
+    phone: phone ? phone.trim() : '',
+    password: password.trim(),
+    budget: {
+      initialAmount: Number(initialAmount) > 0 ? Number(initialAmount) : 30000,
+      currency: currency || '₹',
+      currencyCode: 'INR',
+      month: 'Monthly Budget',
+      notes: 'Initial Allowance'
+    },
+    settings: {
+      reminderEnabled: true,
+      reminderTime: '20:30',
+      recipientEmail: cleanEmail || '',
+      recipientPhone: phone ? phone.trim() : '',
+      notifyEmail: Boolean(cleanEmail),
+      notifySms: Boolean(phone),
+      notifyBrowser: true,
+      smtp: { host: '', port: 587, secure: false, user: '', pass: '', from: 'Daily Expenses <no-reply@expensetracker.local>' },
+      twilio: { accountSid: '', authToken: '', fromPhone: '' },
+      lastReminderSentDate: null,
+      reminderHistory: []
+    },
+    createdAt: new Date().toISOString()
+  };
+
+  db.users.push(newUser);
+  saveDb(db);
+
+  const token = crypto.randomBytes(32).toString('hex');
+  activeSessions.set(token, newUserId);
+
+  res.json({
+    success: true,
+    token,
+    user: {
+      id: newUser.id,
+      name: newUser.name,
+      username: newUser.username,
+      email: newUser.email,
+      phone: newUser.phone
+    }
+  });
+});
+
+// 2. User Login
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
-  const db = getDb();
-  const configuredUser = db.settings?.auth?.username || 'admin';
-  const configuredPass = db.settings?.auth?.password || '1234';
+  if (!username || !password) {
+    return res.status(400).json({ success: false, error: 'Please enter username and password.' });
+  }
 
-  if (username === configuredUser && password === configuredPass) {
+  const cleanUser = username.trim().toLowerCase();
+  const cleanPass = password.trim();
+  const db = getDb();
+
+  const user = (db.users || []).find(u => 
+    (u.username.toLowerCase() === cleanUser || (u.email && u.email.toLowerCase() === cleanUser)) &&
+    u.password === cleanPass
+  );
+
+  if (user) {
     const token = crypto.randomBytes(32).toString('hex');
-    activeTokens.add(token);
+    activeSessions.set(token, user.id);
     return res.json({
       success: true,
       token,
-      username: configuredUser
+      user: {
+        id: user.id,
+        name: user.name || user.username,
+        username: user.username,
+        email: user.email,
+        phone: user.phone
+      }
     });
   }
 
   return res.status(401).json({
     success: false,
-    error: 'Invalid username or password. Please try again.'
+    error: 'Invalid username/email or password. Please try again.'
   });
 });
 
+// 3. Verify Active Session
 app.get('/api/auth/verify', (req, res) => {
   const authHeader = req.headers['authorization'];
   let token = null;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.substring(7);
   }
-  if (token && activeTokens.has(token)) {
-    return res.json({ success: true, valid: true });
+  if (token && activeSessions.has(token)) {
+    const userId = activeSessions.get(token);
+    const db = getDb();
+    const user = (db.users || []).find(u => u.id === userId);
+    if (user) {
+      return res.json({
+        success: true,
+        valid: true,
+        user: {
+          id: user.id,
+          name: user.name || user.username,
+          username: user.username,
+          email: user.email,
+          phone: user.phone
+        }
+      });
+    }
   }
   return res.status(401).json({ success: false, valid: false });
 });
 
+// 4. Logout
 app.post('/api/auth/logout', (req, res) => {
   const authHeader = req.headers['authorization'];
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    activeTokens.delete(authHeader.substring(7));
+    activeSessions.delete(authHeader.substring(7));
   }
   res.json({ success: true });
 });
 
-// Change Password Endpoint (Protected)
-app.post('/api/auth/change-credentials', requireAuth, (req, res) => {
-  const { currentPassword, newUsername, newPassword } = req.body;
-  const db = getDb();
-  const configuredPass = db.settings?.auth?.password || '1234';
-
-  if (currentPassword !== configuredPass) {
-    return res.status(400).json({ success: false, error: 'Current password is incorrect.' });
+// 5. Forgot Password: Generate & Send 6-Digit OTP
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { identifier } = req.body;
+  if (!identifier) {
+    return res.status(400).json({ success: false, error: 'Please enter your username, email, or phone number.' });
   }
 
-  db.settings.auth = {
-    ...db.settings.auth,
-    username: newUsername || db.settings.auth?.username || 'admin',
-    password: newPassword || configuredPass
-  };
+  const cleanId = identifier.trim().toLowerCase();
+  const db = getDb();
+  const user = (db.users || []).find(u => 
+    u.username.toLowerCase() === cleanId || 
+    (u.email && u.email.toLowerCase() === cleanId) ||
+    (u.phone && u.phone.includes(cleanId))
+  );
+
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'No account found matching this username, email, or phone.' });
+  }
+
+  // Generate 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+  db.otps = (db.otps || []).filter(o => o.userId !== user.id); // clear older OTPs for this user
+  db.otps.push({
+    id: `otp_${Date.now()}`,
+    userId: user.id,
+    identifier: cleanId,
+    otp,
+    expiresAt,
+    used: false
+  });
   saveDb(db);
-  res.json({ success: true, message: 'Login credentials updated successfully!' });
+
+  const otpMsg = `Your Daily Expenses verification code is: ${otp}. Valid for 10 minutes. Do not share this code with anyone.`;
+  const otpHtml = `
+    <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
+      <div style="background: linear-gradient(135deg, #6366f1, #8b5cf6); padding: 24px; text-align: center; color: white;">
+        <h2 style="margin: 0;">🔐 Password Reset OTP</h2>
+      </div>
+      <div style="padding: 24px; color: #334155; line-height: 1.6;">
+        <p>Hello <strong>${user.name || user.username}</strong>,</p>
+        <p>We received a request to reset your password. Use the 6-digit code below to proceed:</p>
+        <div style="text-align: center; margin: 24px 0;">
+          <span style="display: inline-block; font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #4f46e5; background: #eef2ff; padding: 12px 28px; border-radius: 12px; border: 1px dashed #6366f1;">
+            ${otp}
+          </span>
+        </div>
+        <p style="font-size: 13px; color: #64748b;">This code expires in <strong>10 minutes</strong>. If you did not make this request, please ignore this email.</p>
+      </div>
+    </div>
+  `;
+
+  let emailRes = null;
+  let smsRes = null;
+
+  if (user.email) {
+    emailRes = await sendEmailReminder(user.email, '🔐 Your Password Reset Code - Daily Expenses', otpMsg, otpHtml, user.settings?.smtp);
+  }
+  if (user.phone) {
+    smsRes = await sendSmsNotification(user.phone, otpMsg, user.settings?.twilio);
+  }
+
+  // Mask recipient info for privacy
+  const maskedEmail = user.email ? user.email.replace(/^(.)(.*)(.@.*)$/, (_, a, b, c) => a + '*'.repeat(b.length) + c) : null;
+  const maskedPhone = user.phone ? user.phone.replace(/(\d{2})(\d+)(\d{2})/, (_, a, b, c) => a + '*'.repeat(b.length) + c) : null;
+
+  res.json({
+    success: true,
+    message: `Verification code sent to ${maskedEmail || maskedPhone || 'your contact'}!`,
+    maskedEmail,
+    maskedPhone,
+    simulatedOtp: otp, // surfaced for development & instant verification
+    previewUrl: emailRes?.previewUrl || null
+  });
+});
+
+// 6. Verify 6-digit OTP
+app.post('/api/auth/verify-otp', (req, res) => {
+  const { identifier, otp } = req.body;
+  if (!identifier || !otp) {
+    return res.status(400).json({ success: false, error: 'Identifier and OTP code are required.' });
+  }
+
+  const cleanId = identifier.trim().toLowerCase();
+  const cleanOtp = otp.trim();
+  const db = getDb();
+
+  const user = (db.users || []).find(u => 
+    u.username.toLowerCase() === cleanId || 
+    (u.email && u.email.toLowerCase() === cleanId) ||
+    (u.phone && u.phone.includes(cleanId))
+  );
+
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'User not found.' });
+  }
+
+  const otpRecord = (db.otps || []).find(o => 
+    o.userId === user.id && 
+    o.otp === cleanOtp && 
+    o.expiresAt > Date.now() && 
+    !o.used
+  );
+
+  if (!otpRecord) {
+    return res.status(400).json({ success: false, error: 'Invalid or expired OTP code. Please try again or request a new one.' });
+  }
+
+  res.json({ success: true, verified: true });
+});
+
+// 7. Reset Password with OTP
+app.post('/api/auth/reset-password', (req, res) => {
+  const { identifier, otp, newPassword } = req.body;
+  if (!identifier || !otp || !newPassword) {
+    return res.status(400).json({ success: false, error: 'Identifier, OTP, and new password are required.' });
+  }
+
+  const cleanId = identifier.trim().toLowerCase();
+  const cleanOtp = otp.trim();
+  const db = getDb();
+
+  const user = (db.users || []).find(u => 
+    u.username.toLowerCase() === cleanId || 
+    (u.email && u.email.toLowerCase() === cleanId) ||
+    (u.phone && u.phone.includes(cleanId))
+  );
+
+  if (!user) {
+    return res.status(404).json({ success: false, error: 'User not found.' });
+  }
+
+  const otpRecord = (db.otps || []).find(o => 
+    o.userId === user.id && 
+    o.otp === cleanOtp && 
+    o.expiresAt > Date.now() && 
+    !o.used
+  );
+
+  if (!otpRecord) {
+    return res.status(400).json({ success: false, error: 'Invalid or expired verification code.' });
+  }
+
+  // Update password and invalidate OTP
+  user.password = newPassword.trim();
+  otpRecord.used = true;
+  saveDb(db);
+
+  res.json({ success: true, message: 'Password updated successfully! You can now log in with your new password.' });
 });
 
 // -------------------------------------------------------------
-// Protected Dashboard & Management APIs
+// Protected Dashboard & User Data APIs (Scoped by req.user)
 // -------------------------------------------------------------
 
-// 1. Dashboard Aggregates
+// 1. Dashboard Aggregates (User-Scoped)
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const db = getDb();
+  const user = req.user;
   const todayStr = getTodayString();
-  const initialAmount = Number(db.budget?.initialAmount) || 0;
-  const currency = db.budget?.currency || '₹';
+  const initialAmount = Number(user.budget?.initialAmount) || 0;
+  const currency = user.budget?.currency || '₹';
 
-  const expenses = db.expenses || [];
-  const totalSpent = expenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+  // Only this user's expenses
+  const userExpenses = (db.expenses || []).filter(e => e.userId === user.id);
+  const totalSpent = userExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
   const remainingBalance = initialAmount - totalSpent;
 
-  const todayExpenses = expenses.filter(exp => exp.date === todayStr);
+  const todayExpenses = userExpenses.filter(exp => exp.date === todayStr);
   const todaySpent = todayExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
 
   // Check if daily report was generated or if today has entries
-  const reportForToday = (db.reports || []).find(r => r.date === todayStr);
+  const reportForToday = (db.reports || []).find(r => r.userId === user.id && r.date === todayStr);
   const isLoggedToday = todayExpenses.length > 0 || Boolean(reportForToday);
 
   // Category breakdown
   const categoryBreakdown = {};
-  expenses.forEach(exp => {
+  userExpenses.forEach(exp => {
     const cat = exp.category || 'Other';
     categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + (Number(exp.amount) || 0);
   });
 
-  // Recent 10 expenses
-  const recentExpenses = [...expenses].reverse().slice(0, 10);
+  const recentExpenses = [...userExpenses].reverse().slice(0, 10);
 
-  // Public settings (mask sensitive credentials)
   const safeSettings = {
-    reminderEnabled: db.settings?.reminderEnabled ?? true,
-    reminderTime: db.settings?.reminderTime || '20:30',
-    recipientEmail: db.settings?.recipientEmail || '',
-    recipientPhone: db.settings?.recipientPhone || '',
-    notifyEmail: db.settings?.notifyEmail ?? true,
-    notifySms: db.settings?.notifySms ?? true,
-    notifyBrowser: db.settings?.notifyBrowser ?? true,
-    hasSmtpConfigured: Boolean(db.settings?.smtp?.host && db.settings?.smtp?.user),
-    hasTwilioConfigured: Boolean(db.settings?.twilio?.accountSid),
-    lastReminderSentDate: db.settings?.lastReminderSentDate,
-    recentReminders: (db.settings?.reminderHistory || []).slice(-5).reverse()
+    reminderEnabled: user.settings?.reminderEnabled ?? true,
+    reminderTime: user.settings?.reminderTime || '20:30',
+    recipientEmail: user.settings?.recipientEmail || user.email || '',
+    recipientPhone: user.settings?.recipientPhone || user.phone || '',
+    notifyEmail: user.settings?.notifyEmail ?? true,
+    notifySms: user.settings?.notifySms ?? true,
+    notifyBrowser: user.settings?.notifyBrowser ?? true,
+    hasSmtpConfigured: Boolean(user.settings?.smtp?.host && user.settings?.smtp?.user),
+    hasTwilioConfigured: Boolean(user.settings?.twilio?.accountSid),
+    lastReminderSentDate: user.settings?.lastReminderSentDate,
+    recentReminders: (user.settings?.reminderHistory || []).slice(-5).reverse()
   };
 
   res.json({
-    budget: db.budget,
+    user: {
+      id: user.id,
+      name: user.name || user.username,
+      username: user.username,
+      email: user.email,
+      phone: user.phone
+    },
+    budget: user.budget,
     financials: {
       initialAmount,
       totalSpent,
@@ -351,25 +585,28 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
   });
 });
 
-// 2. Budget Update
+// 2. Budget Update (User-Scoped)
 app.post('/api/budget', requireAuth, (req, res) => {
   const { initialAmount, currency, notes, month } = req.body;
   const db = getDb();
-  db.budget = {
-    ...db.budget,
+  const user = (db.users || []).find(u => u.id === req.user.id);
+  if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
+  user.budget = {
+    ...user.budget,
     initialAmount: Number(initialAmount) || 0,
-    currency: currency || db.budget?.currency || '₹',
-    month: month || db.budget?.month || 'Current Period',
-    notes: notes || db.budget?.notes || ''
+    currency: currency || user.budget?.currency || '₹',
+    month: month || user.budget?.month || 'Current Period',
+    notes: notes || user.budget?.notes || ''
   };
   saveDb(db);
-  res.json({ success: true, budget: db.budget });
+  res.json({ success: true, budget: user.budget });
 });
 
-// 3. Expenses List & Creation (With Instant SMS on creation)
+// 3. Expenses List & Creation (User-Scoped with Instant SMS)
 app.get('/api/expenses', requireAuth, (req, res) => {
   const db = getDb();
-  let list = db.expenses || [];
+  let list = (db.expenses || []).filter(e => e.userId === req.user.id);
   const { date, category } = req.query;
   if (date) list = list.filter(e => e.date === date);
   if (category) list = list.filter(e => e.category === category);
@@ -383,6 +620,9 @@ app.post('/api/expenses', requireAuth, async (req, res) => {
   }
 
   const db = getDb();
+  const user = (db.users || []).find(u => u.id === req.user.id);
+  if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
   const todayStr = getTodayString();
   const now = new Date();
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -390,6 +630,7 @@ app.post('/api/expenses', requireAuth, async (req, res) => {
   const expenseVal = Number(amount);
   const newExpense = {
     id: `exp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    userId: user.id,
     amount: expenseVal,
     category: category || 'General',
     paymentMode: paymentMode || 'UPI',
@@ -399,25 +640,25 @@ app.post('/api/expenses', requireAuth, async (req, res) => {
     createdAt: new Date().toISOString()
   };
 
+  db.expenses = db.expenses || [];
   db.expenses.push(newExpense);
 
-  // Recalculate totals and available balance
-  const initialAmount = Number(db.budget?.initialAmount) || 0;
-  const totalSpent = db.expenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+  // Recalculate totals for this user
+  const initialAmount = Number(user.budget?.initialAmount) || 0;
+  const userExpenses = db.expenses.filter(e => e.userId === user.id);
+  const totalSpent = userExpenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
   const remainingBalance = initialAmount - totalSpent;
-  const currency = db.budget?.currency || '₹';
+  const currency = user.budget?.currency || '₹';
 
-  // Instant SMS Notification to Reference Number
-  const recipientPhone = db.settings?.recipientPhone || '+919876543210';
+  // Instant SMS Notification to user's registered phone
+  const recipientPhone = user.settings?.recipientPhone || user.phone || '+919876543210';
   const smsText = `YOUR EXPENSE OF TODAY IS LOCKED AND AVAILABLE BALANCE IS ${currency}${remainingBalance.toLocaleString()}`;
 
   let smsResult = { success: false };
-  if (db.settings?.notifySms !== false && recipientPhone) {
-    smsResult = await sendSmsNotification(recipientPhone, smsText, db.settings?.twilio);
-    
-    // Record SMS in history
-    db.settings.reminderHistory = db.settings.reminderHistory || [];
-    db.settings.reminderHistory.push({
+  if (user.settings?.notifySms !== false && recipientPhone) {
+    smsResult = await sendSmsNotification(recipientPhone, smsText, user.settings?.twilio);
+    user.settings.reminderHistory = user.settings.reminderHistory || [];
+    user.settings.reminderHistory.push({
       id: `sms_${Date.now()}`,
       timestamp: new Date().toISOString(),
       type: 'EXPENSE_LOG_SMS',
@@ -449,24 +690,29 @@ app.post('/api/expenses', requireAuth, async (req, res) => {
 
 app.delete('/api/expenses/:id', requireAuth, (req, res) => {
   const db = getDb();
-  const initialLen = db.expenses.length;
-  db.expenses = db.expenses.filter(e => e.id !== req.params.id);
+  const initialLen = (db.expenses || []).length;
+  // User can only delete their own expense
+  db.expenses = (db.expenses || []).filter(e => !(e.id === req.params.id && e.userId === req.user.id));
   if (db.expenses.length === initialLen) {
-    return res.status(404).json({ success: false, error: 'Expense not found' });
+    return res.status(404).json({ success: false, error: 'Expense not found or unauthorized' });
   }
   saveDb(db);
   res.json({ success: true });
 });
 
-// 4. Settings Update
+// 4. User Settings
 app.get('/api/settings', requireAuth, (req, res) => {
-  const db = getDb();
-  const s = db.settings || {};
+  const user = req.user;
+  const s = user.settings || {};
   res.json({
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    phone: user.phone,
     reminderEnabled: s.reminderEnabled ?? true,
     reminderTime: s.reminderTime || '20:30',
-    recipientEmail: s.recipientEmail || '',
-    recipientPhone: s.recipientPhone || '',
+    recipientEmail: s.recipientEmail || user.email || '',
+    recipientPhone: s.recipientPhone || user.phone || '',
     notifyEmail: s.notifyEmail ?? true,
     notifySms: s.notifySms ?? true,
     notifyBrowser: s.notifyBrowser ?? true,
@@ -483,8 +729,14 @@ app.get('/api/settings', requireAuth, (req, res) => {
 
 app.post('/api/settings', requireAuth, (req, res) => {
   const db = getDb();
-  const current = db.settings || {};
+  const user = (db.users || []).find(u => u.id === req.user.id);
+  if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
+  const current = user.settings || {};
   const {
+    name,
+    email,
+    phone,
     reminderEnabled,
     reminderTime,
     recipientEmail,
@@ -503,12 +755,16 @@ app.post('/api/settings', requireAuth, (req, res) => {
     twilioFromPhone
   } = req.body;
 
-  db.settings = {
+  if (name) user.name = name.trim();
+  if (email) user.email = email.trim();
+  if (phone) user.phone = phone.trim();
+
+  user.settings = {
     ...current,
     reminderEnabled: reminderEnabled !== undefined ? Boolean(reminderEnabled) : current.reminderEnabled,
     reminderTime: reminderTime || current.reminderTime || '20:30',
-    recipientEmail: recipientEmail !== undefined ? recipientEmail : current.recipientEmail,
-    recipientPhone: recipientPhone !== undefined ? recipientPhone : current.recipientPhone,
+    recipientEmail: recipientEmail !== undefined ? recipientEmail : (current.recipientEmail || user.email),
+    recipientPhone: recipientPhone !== undefined ? recipientPhone : (current.recipientPhone || user.phone),
     notifyEmail: notifyEmail !== undefined ? Boolean(notifyEmail) : current.notifyEmail,
     notifySms: notifySms !== undefined ? Boolean(notifySms) : current.notifySms,
     notifyBrowser: notifyBrowser !== undefined ? Boolean(notifyBrowser) : current.notifyBrowser,
@@ -518,7 +774,7 @@ app.post('/api/settings', requireAuth, (req, res) => {
       secure: smtpSecure !== undefined ? Boolean(smtpSecure) : Boolean(current.smtp?.secure),
       user: smtpUser !== undefined ? smtpUser : (current.smtp?.user || ''),
       pass: smtpPass !== undefined && smtpPass !== '' ? smtpPass : (current.smtp?.pass || ''),
-      from: smtpFrom || current.smtp?.from || 'Budget Tracker <no-reply@budgettracker.local>'
+      from: smtpFrom || current.smtp?.from || 'Daily Expenses <no-reply@expensetracker.local>'
     },
     twilio: {
       accountSid: twilioAccountSid !== undefined ? twilioAccountSid : (current.twilio?.accountSid || ''),
@@ -531,19 +787,21 @@ app.post('/api/settings', requireAuth, (req, res) => {
   res.json({ success: true, message: 'Settings saved successfully' });
 });
 
-// 5. Trigger Immediate Test Reminder
+// 5. Test Reminder (User-Scoped)
 app.post('/api/notifications/test', requireAuth, async (req, res) => {
   const db = getDb();
-  const currency = db.budget?.currency || '₹';
-  const totalSpent = (db.expenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
-  const remaining = (Number(db.budget?.initialAmount) || 0) - totalSpent;
+  const user = req.user;
+  const currency = user.budget?.currency || '₹';
+  const userExpenses = (db.expenses || []).filter(e => e.userId === user.id);
+  const totalSpent = userExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const remaining = (Number(user.budget?.initialAmount) || 0) - totalSpent;
   const todayStr = getTodayString();
 
-  const recipientEmail = req.body.email || db.settings?.recipientEmail || 'user@example.com';
-  const recipientPhone = req.body.phone || db.settings?.recipientPhone || '+919876543210';
+  const recipientEmail = req.body.email || user.settings?.recipientEmail || user.email;
+  const recipientPhone = req.body.phone || user.settings?.recipientPhone || user.phone;
 
   const subject = `⚠️ Daily Expense Alert: You haven't updated today's spending! (${todayStr})`;
-  const textMsg = `Hi! You have not logged your spending for today (${todayStr}). Your remaining budget balance is ${currency}${remaining.toLocaleString()}. Please open your Expense Tracker app to update your daily expenses.`;
+  const textMsg = `Hi ${user.name}! You have not logged your spending for today (${todayStr}). Your remaining budget balance is ${currency}${remaining.toLocaleString()}. Please open your Daily Expenses app to update your daily expenses.`;
 
   const htmlMsg = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #ffffff;">
@@ -552,7 +810,7 @@ app.post('/api/notifications/test', requireAuth, async (req, res) => {
         <p style="margin: 6px 0 0 0; opacity: 0.9; font-size: 14px;">Date: <strong>${todayStr}</strong></p>
       </div>
       <div style="padding: 24px; color: #334155; line-height: 1.6;">
-        <p style="font-size: 16px;">Hello,</p>
+        <p style="font-size: 16px;">Hello <strong>${user.name}</strong>,</p>
         <p style="font-size: 15px;">
           Our system noticed that you <strong>have not updated your spending money</strong> or generated your daily report for today.
         </p>
@@ -560,7 +818,7 @@ app.post('/api/notifications/test', requireAuth, async (req, res) => {
           <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
             <tr>
               <td style="color: #64748b; padding: 4px 0;">Initial Budget:</td>
-              <td style="text-align: right; font-weight: bold; color: #0f172a;">${currency}${(Number(db.budget?.initialAmount) || 0).toLocaleString()}</td>
+              <td style="text-align: right; font-weight: bold; color: #0f172a;">${currency}${(Number(user.budget?.initialAmount) || 0).toLocaleString()}</td>
             </tr>
             <tr>
               <td style="color: #64748b; padding: 4px 0;">Total Spent so far:</td>
@@ -572,24 +830,18 @@ app.post('/api/notifications/test', requireAuth, async (req, res) => {
             </tr>
           </table>
         </div>
-        <p style="font-size: 14px; color: #475569;">
-          Keeping track of your daily expenses ensures you stay within your budget limit.
-        </p>
         <div style="text-align: center; margin: 30px 0 10px;">
           <a href="http://localhost:${PORT}" style="display: inline-block; background: #4f46e5; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-weight: bold; font-size: 15px;">Update Spending Now</a>
         </div>
       </div>
-      <div style="background: #f1f5f9; padding: 12px 24px; text-align: center; font-size: 12px; color: #64748b;">
-        Daily Budget & Expense Reminder Engine • Automated notification
-      </div>
     </div>
   `;
 
-  const emailResult = await sendEmailReminder(recipientEmail, subject, textMsg, htmlMsg, db.settings?.smtp);
-  const smsResult = await sendSmsNotification(recipientPhone, textMsg, db.settings?.twilio);
+  const emailResult = recipientEmail ? await sendEmailReminder(recipientEmail, subject, textMsg, htmlMsg, user.settings?.smtp) : null;
+  const smsResult = recipientPhone ? await sendSmsNotification(recipientPhone, textMsg, user.settings?.twilio) : null;
 
-  // Log in reminder history
-  const historyEntry = {
+  user.settings.reminderHistory = user.settings.reminderHistory || [];
+  user.settings.reminderHistory.push({
     id: `rem_${Date.now()}`,
     timestamp: new Date().toISOString(),
     type: 'MANUAL_TEST',
@@ -597,9 +849,7 @@ app.post('/api/notifications/test', requireAuth, async (req, res) => {
     smsResult,
     recipientEmail,
     recipientPhone
-  };
-  db.settings.reminderHistory = db.settings.reminderHistory || [];
-  db.settings.reminderHistory.push(historyEntry);
+  });
   saveDb(db);
 
   res.json({
@@ -610,19 +860,22 @@ app.post('/api/notifications/test', requireAuth, async (req, res) => {
   });
 });
 
-// 6. Generate Daily Report
+// 6. Generate Daily Report (User-Scoped)
 app.post('/api/reports/generate', requireAuth, async (req, res) => {
   const db = getDb();
+  const user = req.user;
   const todayStr = getTodayString();
-  const currency = db.budget?.currency || '₹';
+  const currency = user.budget?.currency || '₹';
 
-  const todayExpenses = (db.expenses || []).filter(e => e.date === todayStr);
+  const userExpenses = (db.expenses || []).filter(e => e.userId === user.id);
+  const todayExpenses = userExpenses.filter(e => e.date === todayStr);
   const todayTotal = todayExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const totalSpent = (db.expenses || []).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const remaining = (Number(db.budget?.initialAmount) || 0) - totalSpent;
+  const totalSpent = userExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const remaining = (Number(user.budget?.initialAmount) || 0) - totalSpent;
 
   const report = {
     id: `rep_${Date.now()}`,
+    userId: user.id,
     date: todayStr,
     generatedAt: new Date().toISOString(),
     itemCount: todayExpenses.length,
@@ -632,14 +885,12 @@ app.post('/api/reports/generate', requireAuth, async (req, res) => {
     items: todayExpenses
   };
 
-  db.reports = db.reports || [];
-  // Remove older report for today if regenerating
-  db.reports = db.reports.filter(r => r.date !== todayStr);
+  db.reports = (db.reports || []).filter(r => !(r.userId === user.id && r.date === todayStr));
   db.reports.push(report);
   saveDb(db);
 
-  // If email report is requested
-  if (req.body.emailReport && db.settings?.recipientEmail) {
+  if (req.body.emailReport && (user.settings?.recipientEmail || user.email)) {
+    const targetEmail = user.settings?.recipientEmail || user.email;
     const subject = `📊 Daily Expense Report for ${todayStr}`;
     const htmlReport = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px;">
@@ -652,9 +903,9 @@ app.post('/api/reports/generate', requireAuth, async (req, res) => {
         <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
           <thead>
             <tr style="background: #f8fafc; text-align: left;">
-              <th style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Category</th>
-              <th style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Notes</th>
-              <th style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">Amount</th>
+              <th style="padding: 8px;">Category</th>
+              <th style="padding: 8px;">Notes</th>
+              <th style="padding: 8px; text-align: right;">Amount</th>
             </tr>
           </thead>
           <tbody>
@@ -670,18 +921,18 @@ app.post('/api/reports/generate', requireAuth, async (req, res) => {
         </table>
       </div>
     `;
-    await sendEmailReminder(db.settings.recipientEmail, subject, `Daily report for ${todayStr}: ${currency}${todayTotal}`, htmlReport, db.settings?.smtp);
+    await sendEmailReminder(targetEmail, subject, `Daily report for ${todayStr}: ${currency}${todayTotal}`, htmlReport, user.settings?.smtp);
   }
 
   res.json({ success: true, report });
 });
 
-// 7. CSV Export
+// 7. CSV Export (User-Scoped)
 app.get('/api/reports/export-csv', requireAuth, (req, res) => {
   const db = getDb();
-  const expenses = db.expenses || [];
+  const userExpenses = (db.expenses || []).filter(e => e.userId === req.user.id);
   let csv = 'ID,Date,Time,Category,Payment Mode,Amount,Notes,Created At\n';
-  expenses.forEach(e => {
+  userExpenses.forEach(e => {
     const cleanNotes = (e.notes || '').replace(/"/g, '""');
     csv += `"${e.id}","${e.date}","${e.time}","${e.category}","${e.paymentMode}",${e.amount},"${cleanNotes}","${e.createdAt}"\n`;
   });
@@ -691,91 +942,91 @@ app.get('/api/reports/export-csv', requireAuth, (req, res) => {
   res.send(csv);
 });
 
-// Background Cron Scheduler (Runs every minute to check reminder hour)
+// Background Cron Scheduler (Runs every minute, checks ALL registered users)
 cron.schedule('* * * * *', async () => {
   try {
     const db = getDb();
-    if (!db.settings?.reminderEnabled) return;
-
+    const users = db.users || [];
     const now = new Date();
     const currentHour = String(now.getHours()).padStart(2, '0');
     const currentMinute = String(now.getMinutes()).padStart(2, '0');
     const currentTimeStr = `${currentHour}:${currentMinute}`;
-
-    const configuredTime = db.settings.reminderTime || '20:30';
     const todayStr = getTodayString();
 
-    // Trigger only if current time matches configured reminder time and hasn't triggered today
-    if (currentTimeStr === configuredTime && db.settings.lastReminderSentDate !== todayStr) {
-      const todayExpenses = (db.expenses || []).filter(e => e.date === todayStr);
-      const todayReport = (db.reports || []).find(r => r.date === todayStr);
+    for (const user of users) {
+      if (user.settings?.reminderEnabled === false) continue;
 
-      // Condition: No expense logged AND no report generated for today
-      if (todayExpenses.length === 0 && !todayReport) {
-        console.log(`\n🔔 [Cron Alert] User has not updated spending for ${todayStr}. Firing reminder notifications...`);
+      const configuredTime = user.settings?.reminderTime || '20:30';
 
-        const currency = db.budget?.currency || '₹';
-        const totalSpent = (db.expenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
-        const remaining = (Number(db.budget?.initialAmount) || 0) - totalSpent;
+      if (currentTimeStr === configuredTime && user.settings?.lastReminderSentDate !== todayStr) {
+        const userExpensesToday = (db.expenses || []).filter(e => e.userId === user.id && e.date === todayStr);
+        const userReportToday = (db.reports || []).find(r => r.userId === user.id && r.date === todayStr);
 
-        const subject = `⏰ Daily Reminder: Log your spending for today (${todayStr})`;
-        const textMsg = `Friendly reminder: You have not updated your daily spending or closed today's report (${todayStr}). Remaining budget: ${currency}${remaining.toLocaleString()}. Open your app to log today's expenses.`;
+        if (userExpensesToday.length === 0 && !userReportToday) {
+          console.log(`\n🔔 [Cron Alert] User ${user.name} (${user.username}) has not logged spending for ${todayStr}. Firing reminder...`);
 
-        const htmlMsg = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden;">
-            <div style="background: #e11d48; color: white; padding: 20px; text-align: center;">
-              <h2 style="margin: 0;">⏰ Daily Spending Reminder</h2>
-              <p style="margin: 4px 0 0; font-size: 14px;">Today: ${todayStr}</p>
-            </div>
-            <div style="padding: 24px;">
-              <p>Hello,</p>
-              <p>You haven't logged any expenses or generated your daily spending report today.</p>
-              <p><strong>Remaining Budget:</strong> ${currency}${remaining.toLocaleString()}</p>
-              <p>Keep your budget accurate by taking 30 seconds to record any purchases.</p>
-              <div style="margin: 24px 0; text-align: center;">
-                <a href="http://localhost:${PORT}" style="background: #e11d48; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Log Today's Spending</a>
+          const currency = user.budget?.currency || '₹';
+          const totalSpent = (db.expenses || []).filter(e => e.userId === user.id).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+          const remaining = (Number(user.budget?.initialAmount) || 0) - totalSpent;
+
+          const subject = `⏰ Daily Reminder: Log your spending for today (${todayStr})`;
+          const textMsg = `Hello ${user.name}! Friendly reminder: You have not logged your spending for today (${todayStr}). Available balance: ${currency}${remaining.toLocaleString()}. Open Daily Expenses to record your spending.`;
+
+          const htmlMsg = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden;">
+              <div style="background: #e11d48; color: white; padding: 20px; text-align: center;">
+                <h2 style="margin: 0;">⏰ Daily Spending Reminder</h2>
+                <p style="margin: 4px 0 0; font-size: 14px;">Today: ${todayStr}</p>
+              </div>
+              <div style="padding: 24px;">
+                <p>Hello <strong>${user.name}</strong>,</p>
+                <p>You haven't logged any expenses or generated your daily spending report today.</p>
+                <p><strong>Available Balance:</strong> ${currency}${remaining.toLocaleString()}</p>
+                <div style="margin: 24px 0; text-align: center;">
+                  <a href="http://localhost:${PORT}" style="background: #e11d48; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Log Today's Spending</a>
+                </div>
               </div>
             </div>
-          </div>
-        `;
+          `;
 
-        let emailRes = null;
-        let smsRes = null;
+          const targetEmail = user.settings?.recipientEmail || user.email;
+          const targetPhone = user.settings?.recipientPhone || user.phone;
 
-        if (db.settings.notifyEmail && db.settings.recipientEmail) {
-          emailRes = await sendEmailReminder(db.settings.recipientEmail, subject, textMsg, htmlMsg, db.settings.smtp);
+          let emailRes = null;
+          let smsRes = null;
+
+          if (user.settings?.notifyEmail && targetEmail) {
+            emailRes = await sendEmailReminder(targetEmail, subject, textMsg, htmlMsg, user.settings?.smtp);
+          }
+          if (user.settings?.notifySms && targetPhone) {
+            smsRes = await sendSmsNotification(targetPhone, textMsg, user.settings?.twilio);
+          }
+
+          user.settings.lastReminderSentDate = todayStr;
+          user.settings.reminderHistory = user.settings.reminderHistory || [];
+          user.settings.reminderHistory.push({
+            id: `cron_${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            type: 'CRON_AUTOMATIC',
+            emailResult: emailRes,
+            smsResult: smsRes
+          });
+          saveDb(db);
         }
-
-        if (db.settings.notifySms && db.settings.recipientPhone) {
-          smsRes = await sendSmsNotification(db.settings.recipientPhone, textMsg, db.settings.twilio);
-        }
-
-        // Record reminder in DB
-        db.settings.lastReminderSentDate = todayStr;
-        db.settings.reminderHistory = db.settings.reminderHistory || [];
-        db.settings.reminderHistory.push({
-          id: `cron_${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          type: 'CRON_AUTOMATIC',
-          emailResult: emailRes,
-          smsResult: smsRes
-        });
-        saveDb(db);
-        console.log(`✅ [Cron Alert] Reminder sent successfully for ${todayStr}.`);
       }
     }
   } catch (err) {
-    console.error('Error in cron task:', err);
+    console.error('Error in multi-user cron scheduler:', err);
   }
 });
 
 // Start Server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n======================================================`);
-  console.log(`💰 SpendWise - Daily Budget & Expense Tracker Server`);
-  console.log(`🌐 Dashboard URL: http://localhost:${PORT}`);
-  console.log(`🔒 Authentication: Enabled (Default user: admin / pass: 1234)`);
-  console.log(`📱 Instant SMS on Expense: Enabled`);
-  console.log(`⏰ Daily Reminder Scheduler: Active`);
+  console.log(`💰 Daily Expenses - Multi-User 3D Expense Engine`);
+  console.log(`🌐 Server URL: http://localhost:${PORT}`);
+  console.log(`👥 Multi-User Architecture: Active`);
+  console.log(`🔐 Forgot Password (OTP Verification): Active`);
+  console.log(`⏰ User-Scoped Daily Reminder Scheduler: Active`);
   console.log(`======================================================\n`);
 });

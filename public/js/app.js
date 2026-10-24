@@ -1,7 +1,7 @@
-// SpendWise - Daily Budget & Expense Tracker Frontend Controller
-// With Secure Authentication, Auto-Refresh & Instant SMS Confirmation
+// Daily Expenses - 3D Multi-User Client Controller with OTP & Auto-Refresh
 
 let appState = {
+  user: null,
   budget: {},
   financials: {},
   todayStatus: {},
@@ -11,15 +11,17 @@ let appState = {
   currency: '₹'
 };
 
-let authToken = localStorage.getItem('spendwise_auth_token') || null;
+let authToken = localStorage.getItem('daily_expenses_token') || null;
 let categoryChartInstance = null;
 let trendChartInstance = null;
+let currentForgotIdentifier = '';
 
-// Initialize on page load
+// Initialization
 document.addEventListener('DOMContentLoaded', () => {
   initClock();
   initDateDefaults();
-  setupAuthEventListeners();
+  setupAuthTabsAndForms();
+  setup3DTilt();
   checkAuth();
   setupLucide();
 });
@@ -40,80 +42,115 @@ async function authFetch(url, options = {}) {
 
   const res = await fetch(url, options);
   if (res.status === 401) {
-    // Session expired or invalid
-    handleLogout('Session expired. Please log in again.');
+    handleLogout('Session expired or unauthorized. Please sign in.');
     throw new Error('Unauthorized');
   }
   return res;
 }
 
 // -------------------------------------------------------------
-// Authentication System
+// 3D Interactive Card Tilt
 // -------------------------------------------------------------
 
-async function checkAuth() {
-  const loginScreen = document.getElementById('loginScreen');
-  const dashboardContainer = document.getElementById('dashboardContainer');
-
-  if (!authToken) {
-    loginScreen.classList.remove('hidden');
-    dashboardContainer.classList.add('hidden');
-    setupLucide();
-    return;
-  }
-
-  try {
-    const res = await fetch('/api/auth/verify', {
-      headers: { 'Authorization': `Bearer ${authToken}` }
+function setup3DTilt() {
+  document.querySelectorAll('.card-3d').forEach(card => {
+    card.addEventListener('mousemove', (e) => {
+      const rect = card.getBoundingClientRect();
+      const x = e.clientX - rect.left - rect.width / 2;
+      const y = e.clientY - rect.top - rect.height / 2;
+      card.style.transform = `perspective(1000px) rotateY(${x / 35}deg) rotateX(${-y / 35}deg) translateY(-4px)`;
     });
-    const data = await res.json();
-    if (res.ok && data.valid) {
-      // Valid session
-      loginScreen.classList.add('hidden');
-      dashboardContainer.classList.remove('hidden');
-      loadDashboardData();
-    } else {
-      handleLogout();
-    }
-  } catch (err) {
-    handleLogout();
-  }
+    card.addEventListener('mouseleave', () => {
+      card.style.transform = 'perspective(1000px) rotateY(0deg) rotateX(0deg) translateY(0)';
+    });
+  });
 }
 
-function handleLogout(message = null) {
-  authToken = null;
-  localStorage.removeItem('spendwise_auth_token');
-  const loginScreen = document.getElementById('loginScreen');
-  const dashboardContainer = document.getElementById('dashboardContainer');
-  loginScreen.classList.remove('hidden');
-  dashboardContainer.classList.add('hidden');
-  if (message) {
-    showLoginError(message);
+// -------------------------------------------------------------
+// Authentication System & Multi-Tab Handling
+// -------------------------------------------------------------
+
+function switchAuthTab(tab) {
+  const tabLogin = document.getElementById('tabBtnLogin');
+  const tabReg = document.getElementById('tabBtnRegister');
+  const tabForgot = document.getElementById('tabBtnForgot');
+
+  const formLogin = document.getElementById('loginForm');
+  const formReg = document.getElementById('registerForm');
+  const containerForgot = document.getElementById('forgotPasswordContainer');
+  const subtitle = document.getElementById('authSubtitle');
+  const alertEl = document.getElementById('authAlert');
+  alertEl.classList.add('hidden');
+
+  // Reset tab button styles
+  [tabLogin, tabReg, tabForgot].forEach(btn => {
+    btn.className = 'flex-1 py-2 rounded-xl transition text-slate-400 hover:text-white';
+  });
+
+  formLogin.classList.add('hidden');
+  formReg.classList.add('hidden');
+  containerForgot.classList.add('hidden');
+
+  if (tab === 'login') {
+    tabLogin.className = 'flex-1 py-2 rounded-xl transition text-white bg-indigo-600 shadow-lg shadow-indigo-600/30';
+    formLogin.classList.remove('hidden');
+    subtitle.textContent = 'Welcome back! Sign in to access your personal expenses';
+  } else if (tab === 'register') {
+    tabReg.className = 'flex-1 py-2 rounded-xl transition text-white bg-indigo-600 shadow-lg shadow-indigo-600/30';
+    formReg.classList.remove('hidden');
+    subtitle.textContent = 'Create your private account with personalized budget tracking';
+  } else if (tab === 'forgot') {
+    tabForgot.className = 'flex-1 py-2 rounded-xl transition text-white bg-indigo-600 shadow-lg shadow-indigo-600/30';
+    containerForgot.classList.remove('hidden');
+    subtitle.textContent = 'Reset your password securely with a 6-digit OTP';
+    // Default to step 1
+    document.getElementById('forgotOtpRequestForm').classList.remove('hidden');
+    document.getElementById('forgotResetPasswordForm').classList.add('hidden');
   }
   setupLucide();
 }
 
-function showLoginError(msg) {
-  const alertEl = document.getElementById('loginErrorAlert');
-  if (alertEl) {
-    alertEl.textContent = msg;
-    alertEl.classList.remove('hidden');
-  }
+function showAuthAlert(msg, type = 'error') {
+  const alertEl = document.getElementById('authAlert');
+  alertEl.innerHTML = msg;
+  alertEl.className = type === 'success' 
+    ? 'p-3.5 rounded-xl text-xs text-center font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+    : 'p-3.5 rounded-xl text-xs text-center font-medium bg-rose-500/10 border border-rose-500/30 text-rose-400';
+  alertEl.classList.remove('hidden');
 }
 
-function setupAuthEventListeners() {
-  // Login Form Submission
-  const loginForm = document.getElementById('loginForm');
-  loginForm?.addEventListener('submit', async (e) => {
+function setupAuthTabsAndForms() {
+  // Tab Switching
+  document.getElementById('tabBtnLogin')?.addEventListener('click', () => switchAuthTab('login'));
+  document.getElementById('tabBtnRegister')?.addEventListener('click', () => switchAuthTab('register'));
+  document.getElementById('tabBtnForgot')?.addEventListener('click', () => switchAuthTab('forgot'));
+  document.getElementById('linkToForgotFromLogin')?.addEventListener('click', () => switchAuthTab('forgot'));
+  document.getElementById('linkToRegisterFromLogin')?.addEventListener('click', () => switchAuthTab('register'));
+  document.getElementById('linkToLoginFromRegister')?.addEventListener('click', () => switchAuthTab('login'));
+  document.getElementById('linkToLoginFromForgot')?.addEventListener('click', () => switchAuthTab('login'));
+
+  // Toggle Password Show/Hide
+  document.querySelectorAll('.togglePasswordBtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.getAttribute('data-target');
+      const input = document.getElementById(targetId);
+      if (input) {
+        const isPass = input.type === 'password';
+        input.type = isPass ? 'text' : 'password';
+        btn.innerHTML = isPass ? '<i data-lucide="eye-off" class="w-4 h-4"></i>' : '<i data-lucide="eye" class="w-4 h-4"></i>';
+        setupLucide();
+      }
+    });
+  });
+
+  // 1. LOGIN SUBMISSION
+  document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value.trim();
-    const errorAlert = document.getElementById('loginErrorAlert');
-    const submitBtn = document.getElementById('btnLoginSubmit');
-
-    errorAlert.classList.add('hidden');
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin"></i><span>Verifying...</span>`;
+    const btn = document.getElementById('btnLoginSubmit');
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin"></i><span>Verifying...</span>`;
     setupLucide();
 
     try {
@@ -127,70 +164,197 @@ function setupAuthEventListeners() {
       if (res.ok && data.success) {
         authToken = data.token;
         if (document.getElementById('rememberMe').checked) {
-          localStorage.setItem('spendwise_auth_token', authToken);
+          localStorage.setItem('daily_expenses_token', authToken);
         }
-        document.getElementById('loginScreen').classList.add('hidden');
+        document.getElementById('authScreen').classList.add('hidden');
         document.getElementById('dashboardContainer').classList.remove('hidden');
-        showToast(`Welcome back, ${data.username || 'User'}!`, 'success');
+        showToast(`Welcome back, ${data.user.name || data.user.username}!`, 'success');
         loadDashboardData();
       } else {
-        showLoginError(data.error || 'Invalid credentials. Try admin / 1234.');
+        showAuthAlert(data.error || 'Invalid username or password.');
       }
     } catch (err) {
-      showLoginError('Connection error. Server is unreachable.');
+      showAuthAlert('Unable to reach server. Please check your connection.');
     } finally {
-      submitBtn.disabled = false;
-      submitBtn.innerHTML = `<i data-lucide="lock" class="w-4 h-4"></i><span>Unlock Dashboard</span>`;
+      btn.disabled = false;
+      btn.innerHTML = `<i data-lucide="lock" class="w-4 h-4"></i><span>Sign In to Dashboard</span>`;
       setupLucide();
     }
   });
 
-  // Password Visibility Toggle
-  const toggleBtn = document.getElementById('togglePasswordBtn');
-  const passInp = document.getElementById('loginPassword');
-  toggleBtn?.addEventListener('click', () => {
-    const isPass = passInp.type === 'password';
-    passInp.type = isPass ? 'text' : 'password';
-    toggleBtn.innerHTML = isPass ? '<i data-lucide="eye-off" class="w-4 h-4"></i>' : '<i data-lucide="eye" class="w-4 h-4"></i>';
+  // 2. REGISTRATION SUBMISSION
+  document.getElementById('registerForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('regName').value.trim();
+    const username = document.getElementById('regUsername').value.trim();
+    const email = document.getElementById('regEmail').value.trim();
+    const phone = document.getElementById('regPhone').value.trim();
+    const initialAmount = document.getElementById('regInitialBudget').value;
+    const password = document.getElementById('regPassword').value.trim();
+    const btn = document.getElementById('btnRegisterSubmit');
+
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin"></i><span>Creating Account...</span>`;
     setupLucide();
+
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, username, email, phone, initialAmount, password })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        authToken = data.token;
+        localStorage.setItem('daily_expenses_token', authToken);
+        document.getElementById('authScreen').classList.add('hidden');
+        document.getElementById('dashboardContainer').classList.remove('hidden');
+        showToast(`Account created successfully! Welcome, ${data.user.name}!`, 'success');
+        loadDashboardData();
+      } else {
+        showAuthAlert(data.error || 'Registration failed.');
+      }
+    } catch (err) {
+      showAuthAlert('Server connection error. Please try again.');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i data-lucide="user-plus" class="w-4 h-4"></i><span>Create Account & Start Tracking</span>`;
+      setupLucide();
+    }
   });
 
-  // Logout Button
+  // 3. FORGOT PASSWORD: STEP 1 (REQUEST OTP)
+  document.getElementById('forgotOtpRequestForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const identifier = document.getElementById('forgotIdentifier').value.trim();
+    const btn = document.getElementById('btnSendOtp');
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin"></i><span>Sending OTP...</span>`;
+    setupLucide();
+
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        currentForgotIdentifier = identifier;
+        document.getElementById('forgotOtpRequestForm').classList.add('hidden');
+        document.getElementById('forgotResetPasswordForm').classList.remove('hidden');
+        document.getElementById('otpSentTargetText').textContent = data.message;
+        
+        let alertMsg = `✅ ${data.message}`;
+        if (data.simulatedOtp) {
+          alertMsg += ` <br><span class="font-mono text-amber-300 font-bold">Verification OTP: ${data.simulatedOtp}</span>`;
+          document.getElementById('otpInputCode').value = data.simulatedOtp;
+        }
+        showAuthAlert(alertMsg, 'success');
+      } else {
+        showAuthAlert(data.error || 'User not found.');
+      }
+    } catch (err) {
+      showAuthAlert('Failed to send OTP code.');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i data-lucide="send" class="w-4 h-4"></i><span>Send 6-Digit OTP</span>`;
+      setupLucide();
+    }
+  });
+
+  // Back button in OTP Step 2
+  document.getElementById('btnBackToOtpRequest')?.addEventListener('click', () => {
+    document.getElementById('forgotOtpRequestForm').classList.remove('hidden');
+    document.getElementById('forgotResetPasswordForm').classList.add('hidden');
+  });
+
+  // 4. FORGOT PASSWORD: STEP 2 (RESET PASSWORD WITH OTP)
+  document.getElementById('forgotResetPasswordForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const otp = document.getElementById('otpInputCode').value.trim();
+    const newPassword = document.getElementById('otpNewPassword').value.trim();
+    const btn = document.getElementById('btnSubmitResetWithOtp');
+
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin"></i><span>Resetting Password...</span>`;
+    setupLucide();
+
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: currentForgotIdentifier, otp, newPassword })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        showAuthAlert('🎉 ' + data.message, 'success');
+        setTimeout(() => {
+          switchAuthTab('login');
+          document.getElementById('loginUsername').value = currentForgotIdentifier;
+        }, 1500);
+      } else {
+        showAuthAlert(data.error || 'Failed to reset password.');
+      }
+    } catch (err) {
+      showAuthAlert('Server error during password reset.');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4"></i><span>Verify OTP & Set New Password</span>`;
+      setupLucide();
+    }
+  });
+
+  // Logout Handler
   document.getElementById('btnLogout')?.addEventListener('click', async () => {
     try {
       await authFetch('/api/auth/logout', { method: 'POST' });
     } catch (e) {}
-    handleLogout('Dashboard locked successfully.');
+    handleLogout('You have been signed out.');
   });
+}
 
-  // Change Password Button inside Settings
-  document.getElementById('btnUpdatePassword')?.addEventListener('click', async () => {
-    const currentPassword = document.getElementById('secCurrentPass').value;
-    const newUsername = document.getElementById('secNewUser').value.trim();
-    const newPassword = document.getElementById('secNewPass').value.trim();
+async function checkAuth() {
+  const authScreen = document.getElementById('authScreen');
+  const dashboard = document.getElementById('dashboardContainer');
 
-    if (!currentPassword) {
-      return showToast('Please enter your current password.', 'error');
-    }
-    if (!newPassword && !newUsername) {
-      return showToast('Please enter a new password or username.', 'error');
-    }
+  if (!authToken) {
+    authScreen.classList.remove('hidden');
+    dashboard.classList.add('hidden');
+    setupLucide();
+    return;
+  }
 
-    try {
-      const res = await authFetch('/api/auth/change-credentials', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentPassword, newUsername, newPassword })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to update credentials');
-      showToast('Login credentials updated successfully!', 'success');
-      document.getElementById('secCurrentPass').value = '';
-      document.getElementById('secNewPass').value = '';
-    } catch (err) {
-      showToast(err.message, 'error');
+  try {
+    const res = await fetch('/api/auth/verify', {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await res.json();
+    if (res.ok && data.valid) {
+      authScreen.classList.add('hidden');
+      dashboard.classList.remove('hidden');
+      loadDashboardData();
+    } else {
+      handleLogout();
     }
-  });
+  } catch (err) {
+    handleLogout();
+  }
+}
+
+function handleLogout(message = null) {
+  authToken = null;
+  localStorage.removeItem('daily_expenses_token');
+  document.getElementById('authScreen').classList.remove('hidden');
+  document.getElementById('dashboardContainer').classList.add('hidden');
+  switchAuthTab('login');
+  if (message) {
+    showAuthAlert(message, 'error');
+  }
+  setupLucide();
 }
 
 // -------------------------------------------------------------
@@ -231,7 +395,7 @@ function initDateDefaults() {
 }
 
 // -------------------------------------------------------------
-// Load Dashboard Data & Auto-Refresh Engine
+// Load Dashboard & Auto-Refresh Engine
 // -------------------------------------------------------------
 
 async function loadDashboardData() {
@@ -242,12 +406,17 @@ async function loadDashboardData() {
     appState = data;
     appState.currency = data.financials?.currency || '₹';
 
+    // Update Profile Header
+    const navName = document.getElementById('navUserName');
+    if (navName) navName.textContent = data.user?.name || data.user?.username || 'User';
+
     renderMetrics(data);
     renderDailyStatusBanner(data.todayStatus, data.settings);
     renderCharts(data.categoryBreakdown, data.recentExpenses);
     renderTransactionsTable(data.recentExpenses);
     updateCurrencyLabels(appState.currency);
     setupLucide();
+    setup3DTilt();
   } catch (err) {
     console.error('Dashboard load error:', err);
   }
@@ -259,7 +428,6 @@ function updateCurrencyLabels(curr) {
   });
 }
 
-// Render Top Metric Cards
 function renderMetrics(data) {
   const fin = data.financials || {};
   const curr = fin.currency || '₹';
@@ -279,26 +447,18 @@ function renderMetrics(data) {
   if (elSpentBar) {
     const pct = Math.min(100, Math.max(0, fin.spentPercentage || 0));
     elSpentBar.style.width = `${pct}%`;
-    if (pct > 90) {
-      elSpentBar.className = 'bg-rose-500 h-1.5 rounded-full transition-all duration-500';
-    } else if (pct > 70) {
-      elSpentBar.className = 'bg-amber-500 h-1.5 rounded-full transition-all duration-500';
-    } else {
-      elSpentBar.className = 'bg-indigo-500 h-1.5 rounded-full transition-all duration-500';
-    }
+    elSpentBar.className = pct > 90 ? 'bg-rose-500 h-1.5 rounded-full transition-all duration-500' :
+                           pct > 70 ? 'bg-amber-500 h-1.5 rounded-full transition-all duration-500' :
+                                      'bg-indigo-500 h-1.5 rounded-full transition-all duration-500';
   }
 
-  // 3. Remaining Balance
+  // 3. Available Balance
   const elRem = document.getElementById('metricRemaining');
   const elHealth = document.getElementById('metricHealthBadge');
   const remVal = fin.remainingBalance || 0;
   if (elRem) {
     elRem.textContent = `${curr}${remVal.toLocaleString()}`;
-    if (remVal < 0) {
-      elRem.className = 'text-2xl font-bold text-rose-400';
-    } else {
-      elRem.className = 'text-2xl font-bold text-emerald-400';
-    }
+    elRem.className = remVal < 0 ? 'text-2xl font-extrabold text-rose-400' : 'text-2xl font-extrabold text-emerald-400';
   }
   if (elHealth) {
     if (remVal < 0) {
@@ -320,7 +480,6 @@ function renderMetrics(data) {
   if (elTodayCount) elTodayCount.textContent = `${data.todayStatus?.count || 0} transaction(s) recorded today`;
 }
 
-// Render Daily Status Banner
 function renderDailyStatusBanner(status, settings) {
   const banner = document.getElementById('dailyStatusBanner');
   if (!banner) return;
@@ -329,11 +488,11 @@ function renderDailyStatusBanner(status, settings) {
   const reminderTime = settings?.reminderTime || '20:30';
 
   if (!status.isLogged) {
-    banner.className = 'p-4 sm:p-5 rounded-2xl glass-card border border-amber-500/30 bg-amber-500/5 shadow-lg shadow-amber-500/5 transition duration-300';
+    banner.className = 'p-4 sm:p-5 rounded-3xl glass-card border border-amber-500/40 bg-amber-500/5 shadow-xl shadow-amber-500/5 transition duration-300 card-3d';
     banner.innerHTML = `
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div class="flex items-start sm:items-center gap-3.5">
-          <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 animate-bounce">
+          <div class="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 badge-3d animate-bounce">
             <i data-lucide="alert-triangle" class="w-5 h-5"></i>
           </div>
           <div>
@@ -342,15 +501,15 @@ function renderDailyStatusBanner(status, settings) {
               <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">Action Needed</span>
             </div>
             <p class="text-xs text-slate-300 mt-0.5">
-              Daily reminder active for <strong class="text-amber-400 font-mono">${reminderTime}</strong>. When you log spending, an instant SMS text will lock today's expense and show available balance.
+              Daily reminder active for <strong class="text-amber-400 font-mono">${reminderTime}</strong>. When you log spending, an instant SMS text locks today's cost and shows your available balance.
             </p>
           </div>
         </div>
         <div class="flex items-center gap-2 self-end sm:self-center shrink-0">
-          <button id="bannerBtnQuickNoSpend" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition">
+          <button id="bannerBtnQuickNoSpend" class="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-semibold border border-slate-700 transition">
             No Spend Today
           </button>
-          <button id="bannerBtnTriggerTest" class="px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 text-xs font-semibold border border-amber-500/30 transition flex items-center gap-1">
+          <button id="bannerBtnTriggerTest" class="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 text-xs font-semibold border border-amber-500/30 transition flex items-center gap-1">
             <i data-lucide="send" class="w-3.5 h-3.5"></i>
             <span>Test Alert</span>
           </button>
@@ -361,11 +520,11 @@ function renderDailyStatusBanner(status, settings) {
     document.getElementById('bannerBtnQuickNoSpend')?.addEventListener('click', logNoSpendToday);
     document.getElementById('bannerBtnTriggerTest')?.addEventListener('click', sendTestReminder);
   } else {
-    banner.className = 'p-4 sm:p-5 rounded-2xl glass-card border border-emerald-500/30 bg-emerald-500/5 shadow-lg shadow-emerald-500/5 transition duration-300';
+    banner.className = 'p-4 sm:p-5 rounded-3xl glass-card border border-emerald-500/40 bg-emerald-500/5 shadow-xl shadow-emerald-500/5 transition duration-300 card-3d';
     banner.innerHTML = `
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div class="flex items-start sm:items-center gap-3.5">
-          <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+          <div class="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 badge-3d">
             <i data-lucide="check-circle" class="w-5 h-5"></i>
           </div>
           <div>
@@ -379,7 +538,7 @@ function renderDailyStatusBanner(status, settings) {
           </div>
         </div>
         <div class="flex items-center gap-2 self-end sm:self-center shrink-0">
-          <button id="bannerBtnViewReport" class="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/30 transition flex items-center gap-1.5">
+          <button id="bannerBtnViewReport" class="px-3.5 py-1.5 rounded-xl btn-3d text-white text-xs font-semibold transition flex items-center gap-1.5">
             <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
             <span>View Daily Report</span>
           </button>
@@ -428,9 +587,9 @@ function renderCategoryChart(categoryData) {
       datasets: [{
         data: values,
         backgroundColor: colors.slice(0, labels.length),
-        borderColor: '#111827',
-        borderWidth: 2,
-        hoverOffset: 4
+        borderColor: '#0b0f19',
+        borderWidth: 3,
+        hoverOffset: 6
       }]
     },
     options: {
@@ -497,7 +656,7 @@ function renderTrendChart(expenses) {
         data: chartData,
         backgroundColor: '#6366f1',
         hoverBackgroundColor: '#818cf8',
-        borderRadius: 6,
+        borderRadius: 8,
         barThickness: 24
       }]
     },
@@ -531,7 +690,7 @@ function renderTrendChart(expenses) {
 }
 
 // -------------------------------------------------------------
-// Transactions Table & Deletion
+// Transactions Table
 // -------------------------------------------------------------
 
 function renderTransactionsTable(expenses) {
@@ -545,7 +704,7 @@ function renderTransactionsTable(expenses) {
       <tr>
         <td colspan="6" class="py-8 text-center text-slate-500">
           <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 opacity-40"></i>
-          <p>No expenses recorded yet. Start by logging an expense above!</p>
+          <p>No expenses recorded yet. Use the form on the left to log your first spend!</p>
         </td>
       </tr>
     `;
@@ -566,7 +725,7 @@ function renderTransactionsTable(expenses) {
         </td>
         <td class="py-3 px-3.5 text-right font-bold text-rose-400">${curr}${Number(exp.amount).toLocaleString()}</td>
         <td class="py-3 px-3.5 text-center">
-          <button onclick="deleteExpense('${exp.id}')" class="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition" title="Delete Expense">
+          <button onclick="deleteExpense('${exp.id}')" class="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition" title="Delete Expense">
             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
           </button>
         </td>
@@ -583,7 +742,7 @@ async function deleteExpense(id) {
     const res = await authFetch(`/api/expenses/${id}`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Delete failed');
     showToast('Expense removed', 'success');
-    loadDashboardData(); // Auto-refresh data
+    loadDashboardData();
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -616,29 +775,29 @@ function setupDashboardEventListeners() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to save expense');
 
-        // 1. AUTO-REFRESH: Clear the form inputs cleanly for next entry
+        // 1. Clear form inputs cleanly for next entry
         amountInp.value = '';
         notesInp.value = '';
         initDateDefaults();
 
-        // 2. AUTO-REFRESH: Instantly refresh all dashboard data, meters, and charts
+        // 2. Refresh dashboard data, balance meters, and charts seamlessly
         await loadDashboardData();
 
-        // 3. Prominent Alert & Toast with the exact requested SMS text
+        // 3. Prominent Alert & Toast with exact SMS locked message
         const smsMsg = data.smsAlert?.message || `YOUR EXPENSE OF TODAY IS LOCKED AND AVAILABLE BALANCE IS ${appState.currency}${(data.financials?.remainingBalance || 0).toLocaleString()}`;
-        const recipient = data.smsAlert?.recipient || 'your phone';
+        const recipient = data.smsAlert?.recipient || 'your registered phone';
 
         showProminentAlert(`
           <div class="space-y-1.5">
             <div class="flex items-center gap-2 font-bold text-sm text-emerald-300">
               <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
-              <span>Expense Locked & SMS Sent!</span>
+              <span>Expense Locked & SMS Dispatched!</span>
             </div>
-            <p class="text-xs text-white bg-slate-900/80 p-2.5 rounded-lg border border-slate-700 font-mono">
+            <p class="text-xs text-white bg-slate-900/90 p-2.5 rounded-xl border border-slate-700 font-mono">
               "${smsMsg}"
             </p>
             <p class="text-[11px] text-slate-400">
-              📲 Texted to reference number: <strong class="text-indigo-300 font-mono">${recipient}</strong>
+              📲 SMS sent to reference number: <strong class="text-indigo-300 font-mono">${recipient}</strong>
             </p>
           </div>
         `, 'success', 7000);
@@ -666,7 +825,6 @@ function setupDashboardEventListeners() {
     });
   }
 
-  // Setup Modals
   setupModals();
 
   // Export CSV
@@ -680,7 +838,6 @@ function setupDashboardEventListeners() {
 
 setupDashboardEventListeners();
 
-// Quick "No Spend Today" helper
 async function logNoSpendToday() {
   try {
     const res = await authFetch('/api/reports/generate', {
@@ -689,7 +846,7 @@ async function logNoSpendToday() {
       body: JSON.stringify({ emailReport: false })
     });
     if (!res.ok) throw new Error('Failed to update today status');
-    showToast('Today marked as zero expense / day closed! Reminder dismissed.', 'success');
+    showToast('Marked today as zero expense / day closed! Reminder dismissed.', 'success');
     loadDashboardData();
   } catch (err) {
     showToast(err.message, 'error');
@@ -759,15 +916,14 @@ function setupModals() {
     try {
       const res = await authFetch('/api/settings');
       const s = await res.json();
+      document.getElementById('setProfileName').value = s.name || '';
+      document.getElementById('setProfileUsername').value = s.username || '';
       document.getElementById('setReminderEnabled').checked = Boolean(s.reminderEnabled);
       document.getElementById('setReminderTime').value = s.reminderTime || '20:30';
-      document.getElementById('setRecipientEmail').value = s.recipientEmail || '';
-      document.getElementById('setRecipientPhone').value = s.recipientPhone || '';
+      document.getElementById('setRecipientEmail').value = s.recipientEmail || s.email || '';
+      document.getElementById('setRecipientPhone').value = s.recipientPhone || s.phone || '';
       document.getElementById('setNotifyEmail').checked = Boolean(s.notifyEmail);
       document.getElementById('setNotifySms').checked = Boolean(s.notifySms);
-      document.getElementById('setSmtpHost').value = s.smtpHost || '';
-      document.getElementById('setSmtpPort').value = s.smtpPort || 587;
-      document.getElementById('setSmtpUser').value = s.smtpUser || '';
       settingsModal.classList.remove('hidden');
     } catch (err) {
       showToast('Error loading settings', 'error');
@@ -785,16 +941,13 @@ function setupModals() {
   settingsForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const payload = {
+      name: document.getElementById('setProfileName').value,
       reminderEnabled: document.getElementById('setReminderEnabled').checked,
       reminderTime: document.getElementById('setReminderTime').value,
       recipientEmail: document.getElementById('setRecipientEmail').value,
       recipientPhone: document.getElementById('setRecipientPhone').value,
       notifyEmail: document.getElementById('setNotifyEmail').checked,
-      notifySms: document.getElementById('setNotifySms').checked,
-      smtpHost: document.getElementById('setSmtpHost').value,
-      smtpPort: document.getElementById('setSmtpPort').value,
-      smtpUser: document.getElementById('setSmtpUser').value,
-      smtpPass: document.getElementById('setSmtpPass').value
+      notifySms: document.getElementById('setNotifySms').checked
     };
 
     try {
@@ -804,7 +957,7 @@ function setupModals() {
         body: JSON.stringify(payload)
       });
       if (!res.ok) throw new Error('Failed to save settings');
-      showToast('Daily Reminder & SMS Settings Saved!', 'success');
+      showToast('Settings saved successfully!', 'success');
       closeSettings();
       loadDashboardData();
     } catch (err) {
@@ -812,7 +965,6 @@ function setupModals() {
     }
   });
 
-  // Test Reminder button inside modal
   document.getElementById('btnTestReminderNow')?.addEventListener('click', sendTestReminder);
 
   // 3. Report Modal
@@ -821,7 +973,6 @@ function setupModals() {
   });
 }
 
-// Trigger Test Reminder
 async function sendTestReminder() {
   showToast('Dispatching test reminder alert...', 'info');
   try {
@@ -846,7 +997,6 @@ async function sendTestReminder() {
   }
 }
 
-// Generate Daily Report View
 async function generateDailyReport() {
   try {
     const res = await authFetch('/api/reports/generate', {
@@ -864,7 +1014,7 @@ async function generateDailyReport() {
     document.getElementById('reportModalDate').textContent = `Date: ${rep.date} • Generated at: ${new Date(rep.generatedAt).toLocaleTimeString()}`;
 
     content.innerHTML = `
-      <div class="grid grid-cols-3 gap-3 p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-center">
+      <div class="grid grid-cols-3 gap-3 p-3 rounded-2xl bg-slate-900/90 border border-slate-800 text-center">
         <div>
           <span class="text-slate-400 text-[11px] block">Today's Total</span>
           <span class="text-base font-bold text-rose-400">${curr}${rep.todaySpent.toLocaleString()}</span>
@@ -881,7 +1031,7 @@ async function generateDailyReport() {
 
       <div class="mt-4">
         <h4 class="font-bold text-white mb-2">Itemized Breakdown for Today:</h4>
-        <div class="rounded-xl border border-slate-800 overflow-hidden">
+        <div class="rounded-2xl border border-slate-800 overflow-hidden">
           <table class="w-full text-left text-xs">
             <thead class="bg-slate-900 text-slate-400">
               <tr>
@@ -939,7 +1089,7 @@ function showToast(message, type = 'info', duration = 4000) {
                   type === 'error' ? 'bg-rose-600' :
                   'bg-indigo-600';
 
-  toast.className = `flex items-center gap-2 px-4 py-3 rounded-xl text-white text-xs font-semibold shadow-2xl ${bgClass} transform transition-all duration-300 translate-y-2 opacity-0`;
+  toast.className = `pointer-events-auto flex items-center gap-2 px-4 py-3 rounded-2xl text-white text-xs font-semibold shadow-2xl ${bgClass} transform transition-all duration-300 translate-y-2 opacity-0`;
   toast.innerHTML = `<span>${message}</span>`;
   container.appendChild(toast);
 
@@ -958,7 +1108,7 @@ function showProminentAlert(htmlContent, type = 'success', duration = 7000) {
   if (!container) return;
 
   const toast = document.createElement('div');
-  toast.className = `p-4 rounded-2xl text-white text-xs bg-slate-900 border border-emerald-500/40 shadow-2xl shadow-emerald-500/10 transform transition-all duration-300 translate-y-2 opacity-0`;
+  toast.className = `pointer-events-auto p-4 rounded-2xl text-white text-xs bg-slate-900 border border-emerald-500/40 shadow-2xl shadow-emerald-500/10 transform transition-all duration-300 translate-y-2 opacity-0`;
   toast.innerHTML = htmlContent;
   container.appendChild(toast);
 
@@ -974,5 +1124,4 @@ function showProminentAlert(htmlContent, type = 'success', duration = 7000) {
   }, duration);
 }
 
-// Global hook for onclick
 window.deleteExpense = deleteExpense;

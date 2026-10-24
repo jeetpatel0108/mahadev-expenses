@@ -1,206 +1,47 @@
 {
-  "budget": {
-    "initialAmount": 30000,
-    "currency": "₹",
-    "currencyCode": "INR",
-    "month": "September 2026",
-    "notes": "Monthly Allowance / Budget"
-  },
-  "settings": {
-    "auth": {
+  "users": [
+    {
+      "id": "usr_admin_default",
+      "name": "Admin Manager",
       "username": "admin",
+      "email": "mybudgetalerts@gmail.com",
+      "phone": "+919876543210",
       "password": "1234",
-      "requireLogin": true
-    },
-    "reminderEnabled": true,
-    "reminderTime": "20:30",
-    "recipientEmail": "mybudgetalerts@gmail.com",
-    "recipientPhone": "+919876543210",
-    "notifyEmail": true,
-    "notifySms": true,
-    "notifyBrowser": true,
-    "smtp": {
-      "host": "",
-      "port": 587,
-      "secure": false,
-      "user": "",
-      "pass": "",
-      "from": "Expense Reminder <no-reply@expensetracker.local>"
-    },
-    "twilio": {
-      "accountSid": "",
-      "authToken": "",
-      "fromPhone": ""
-    },
-    "lastReminderSentDate": null,
-    "reminderHistory": [
-      {
-        "id": "rem_1789876719278",
-        "timestamp": "2026-09-20T03:58:39.278Z",
-        "type": "MANUAL_TEST",
-        "emailResult": {
-          "success": true,
-          "messageId": "<52645072-94ce-2696-5f79-83705cd5a0a8@expensetracker.local>",
-          "previewUrl": "https://ethereal.email/message/aq9Z6uK0mpYcgRGjaq9Z75W6vNXKj7aQAAAAAZs2kmlNRpXzW5iveFTTK9E",
-          "mode": "preview_ethereal"
+      "budget": {
+        "initialAmount": 30000,
+        "currency": "₹",
+        "currencyCode": "INR",
+        "month": "October 2026",
+        "notes": "Monthly Allowance / Budget"
+      },
+      "settings": {
+        "reminderEnabled": true,
+        "reminderTime": "20:30",
+        "recipientEmail": "mybudgetalerts@gmail.com",
+        "recipientPhone": "+919876543210",
+        "notifyEmail": true,
+        "notifySms": true,
+        "notifyBrowser": true,
+        "smtp": {
+          "host": "",
+          "port": 587,
+          "secure": false,
+          "user": "",
+          "pass": "",
+          "from": "Daily Expenses <no-reply@expensetracker.local>"
         },
-        "smsResult": {
-          "success": true,
-          "mode": "simulated_sms",
-          "recipient": "+919876543210",
-          "text": "Hi! You have not logged your spending for today (2026-09-20). Your remaining budget balance is ₹28,100. Please open your Expense Tracker app to update your daily expenses.",
-          "note": "SMS simulated successfully. To send real GSM SMS, input Twilio credentials in Settings."
+        "twilio": {
+          "accountSid": "",
+          "authToken": "",
+          "fromPhone": ""
         },
-        "recipientEmail": "testuser@example.com",
-        "recipientPhone": "+919876543210"
+        "lastReminderSentDate": null,
+        "reminderHistory": []
       },
-      {
-        "id": "sms_1789877350508",
-        "timestamp": "2026-09-20T04:09:10.508Z",
-        "type": "EXPENSE_LOG_SMS",
-        "recipientPhone": "+919876543210",
-        "messageText": "YOUR EXPENSE OF TODAY IS LOCKED AND AVAILABLE BALANCE IS ₹27,600",
-        "smsResult": {
-          "success": true,
-          "mode": "simulated_sms",
-          "recipient": "+919876543210",
-          "text": "YOUR EXPENSE OF TODAY IS LOCKED AND AVAILABLE BALANCE IS ₹27,600",
-          "note": "SMS dispatched successfully."
-        }
-      },
-      {
-        "id": "sms_1789877380080",
-        "timestamp": "2026-09-20T04:09:40.080Z",
-        "type": "EXPENSE_LOG_SMS",
-        "recipientPhone": "+919876543210",
-        "messageText": "YOUR EXPENSE OF TODAY IS LOCKED AND AVAILABLE BALANCE IS ₹27,100",
-        "smsResult": {
-          "success": true,
-          "mode": "simulated_sms",
-          "recipient": "+919876543210",
-          "text": "YOUR EXPENSE OF TODAY IS LOCKED AND AVAILABLE BALANCE IS ₹27,100",
-          "note": "SMS dispatched successfully."
-        }
-      },
-      {
-        "id": "sms_1789877458813",
-        "timestamp": "2026-09-20T04:10:58.813Z",
-        "type": "EXPENSE_LOG_SMS",
-        "recipientPhone": "+919876543210",
-        "messageText": "YOUR EXPENSE OF TODAY IS LOCKED AND AVAILABLE BALANCE IS ₹27,050",
-        "smsResult": {
-          "success": true,
-          "mode": "simulated_sms",
-          "recipient": "+919876543210",
-          "text": "YOUR EXPENSE OF TODAY IS LOCKED AND AVAILABLE BALANCE IS ₹27,050",
-          "note": "SMS dispatched successfully."
-        }
-      }
-    ]
-  },
-  "expenses": [
-    {
-      "id": "exp_sample_1",
-      "date": "2026-09-19",
-      "time": "13:15",
-      "amount": 450,
-      "category": "Food & Dining",
-      "paymentMode": "UPI",
-      "notes": "Lunch & Snacks",
-      "createdAt": "2026-09-19T07:45:00.000Z"
-    },
-    {
-      "id": "exp_sample_2",
-      "date": "2026-09-19",
-      "time": "18:40",
-      "amount": 1200,
-      "category": "Shopping",
-      "paymentMode": "Card",
-      "notes": "Groceries for the week",
-      "createdAt": "2026-09-19T13:10:00.000Z"
-    },
-    {
-      "id": "exp_1789876713739_7u3c",
-      "amount": 250,
-      "category": "Food & Dining",
-      "paymentMode": "UPI",
-      "notes": "Morning Coffee & Breakfast",
-      "date": "2026-09-20",
-      "time": "10:00",
-      "createdAt": "2026-09-20T03:58:33.740Z"
-    },
-    {
-      "id": "exp_1789877350491_rr9q",
-      "amount": 500,
-      "category": "Food & Dining",
-      "paymentMode": "UPI",
-      "notes": "Team Lunch",
-      "date": "2026-09-20",
-      "time": "14:30",
-      "createdAt": "2026-09-20T04:09:10.491Z"
-    },
-    {
-      "id": "exp_1789877380061_fmjs",
-      "amount": 500,
-      "category": "Food & Dining",
-      "paymentMode": "UPI",
-      "notes": "Team Lunch",
-      "date": "2026-09-20",
-      "time": "14:30",
-      "createdAt": "2026-09-20T04:09:40.061Z"
-    },
-    {
-      "id": "exp_1789877458813_qprx",
-      "amount": 50,
-      "category": "Food & Dining",
-      "paymentMode": "UPI",
-      "notes": "",
-      "date": "2026-09-20",
-      "time": "09:40",
-      "createdAt": "2026-09-20T04:10:58.813Z"
+      "createdAt": "2026-09-20T00:00:00.000Z"
     }
   ],
-  "reports": [
-    {
-      "id": "rep_1789877417473",
-      "date": "2026-09-20",
-      "generatedAt": "2026-09-20T04:10:17.473Z",
-      "itemCount": 3,
-      "todaySpent": 1250,
-      "totalSpentToDate": 2900,
-      "remainingBalance": 27100,
-      "items": [
-        {
-          "id": "exp_1789876713739_7u3c",
-          "amount": 250,
-          "category": "Food & Dining",
-          "paymentMode": "UPI",
-          "notes": "Morning Coffee & Breakfast",
-          "date": "2026-09-20",
-          "time": "10:00",
-          "createdAt": "2026-09-20T03:58:33.740Z"
-        },
-        {
-          "id": "exp_1789877350491_rr9q",
-          "amount": 500,
-          "category": "Food & Dining",
-          "paymentMode": "UPI",
-          "notes": "Team Lunch",
-          "date": "2026-09-20",
-          "time": "14:30",
-          "createdAt": "2026-09-20T04:09:10.491Z"
-        },
-        {
-          "id": "exp_1789877380061_fmjs",
-          "amount": 500,
-          "category": "Food & Dining",
-          "paymentMode": "UPI",
-          "notes": "Team Lunch",
-          "date": "2026-09-20",
-          "time": "14:30",
-          "createdAt": "2026-09-20T04:09:40.061Z"
-        }
-      ]
-    }
-  ]
+  "otps": [],
+  "expenses": [],
+  "reports": []
 }
