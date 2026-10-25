@@ -240,20 +240,10 @@ function setupAuthTabsAndForms() {
         document.getElementById('otpSentTargetText').textContent = data.message;
         document.getElementById('otpInputCode').value = '';
 
-        const waBtn = document.getElementById('btnWhatsAppDirectLink');
-        if (waBtn) {
-          if (data.whatsappUrl) {
-            waBtn.href = data.whatsappUrl;
-            waBtn.classList.remove('hidden');
-          } else {
-            waBtn.classList.add('hidden');
-          }
-        }
-
         const pinIdentifier = document.getElementById('pinResetIdentifier');
         if (pinIdentifier) pinIdentifier.value = identifier;
 
-        showAuthAlert(`📲 ${data.message} ${data.whatsappUrl ? '<br><span class="text-emerald-300 font-semibold">Tap the green WhatsApp button below if SMS is delayed!</span>' : ''}`, 'success');
+        showAuthAlert(`📲 ${data.message}`, data.smsDelivered !== false ? 'success' : 'error');
       } else {
         showAuthAlert(data.error || 'User not found.');
       }

@@ -256,14 +256,14 @@ async function sendSmsNotification(phone, messageText, options = {}) {
     }
   }
 
-  // Fallback simulator for development / carrier queue log
-  console.log(`\n📱 [SMS Carrier Queued] To: +91 ${targetNumber} -> Message: "${messageText}"\n`);
+  // When no live SMS Gateway Key is provided
+  console.log(`\n⚠️ [SMS Gateway Not Configured] To: +91 ${targetNumber} -> Message: "${messageText}"\n`);
   return {
-    success: true,
-    mode: 'sms_dispatched_carrier',
+    success: false,
+    mode: 'gateway_key_required',
     recipient: `+91${targetNumber}`,
     text: messageText,
-    note: fast2smsKey ? 'Fast2SMS dispatched' : 'Configure Fast2SMS API Key in Settings to receive live SMS directly on mobile'
+    error: 'Fast2SMS API Key is required to send real cellular SMS to Indian mobile numbers.'
   };
 }
 
@@ -492,19 +492,25 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   const maskedPhone = cleanPhone ? cleanPhone.replace(/(\d{2})(\d+)(\d{2})$/, (_, a, b, c) => a + '*'.repeat(Math.max(1, b.length)) + c) : null;
   const targetDisplay = maskedPhone ? `mobile (+91 ${maskedPhone})` : (maskedEmail ? `email (${maskedEmail})` : 'registered phone');
 
-  const whatsappText = encodeURIComponent(`🔐 Daily Expenses Verification Code: ${otp}\n(Valid for 10 minutes. Do not share with anyone)`);
-  const whatsappUrl = cleanPhone ? `https://wa.me/91${cleanPhone}?text=${whatsappText}` : null;
   const hasSmsGateway = Boolean(user.settings?.fast2smsApiKey || process.env.FAST2SMS_API_KEY || user.settings?.twilio?.accountSid);
+
+  let messageText = '';
+  if (smsRes?.success) {
+    messageText = `6-Digit OTP verification code has been dispatched to your ${targetDisplay} via SMS!`;
+  } else if (!hasSmsGateway) {
+    messageText = `⚠️ Fast2SMS API Key required for real SMS delivery. Configure your Fast2SMS key in Settings, or use Security PIN (1234) below.`;
+  } else {
+    messageText = `SMS Gateway Error: ${smsRes?.error || 'Unable to deliver SMS'}. You can also use Security PIN (1234) below.`;
+  }
 
   res.json({
     success: true,
-    message: `6-Digit OTP verification code has been dispatched to your ${targetDisplay}!`,
+    message: messageText,
+    smsDelivered: Boolean(smsRes?.success),
     phone: cleanPhone,
     maskedEmail,
     maskedPhone,
     hasSmsGateway,
-    whatsappUrl,
-    otpCode: otp, // Surfaced securely for WhatsApp direct trigger
     previewUrl: emailRes?.previewUrl || null
   });
 });
