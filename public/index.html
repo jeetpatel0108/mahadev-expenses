@@ -54,12 +54,8 @@
 </head>
 <body class="min-h-screen antialiased selection:bg-indigo-500 selection:text-white bg-[#07090e] text-slate-100 relative">
 
-  <!-- Ambient 3D Glowing Background Lights -->
-  <div class="ambient-glow-1"></div>
-  <div class="ambient-glow-2"></div>
-
   <!-- ============================================================= -->
-  <!-- 🔒 3D MULTI-USER AUTHENTICATION MODAL (Login / Register / Forgot Password OTP) -->
+  <!-- 🔒 MULTI-USER AUTHENTICATION (Login / Register / Forgot Password OTP) -->
   <!-- ============================================================= -->
   <div id="authScreen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#07090e]/90 backdrop-blur-xl">
     <div class="glass-card w-full max-w-lg rounded-3xl border border-slate-700/60 p-7 sm:p-9 space-y-6 shadow-2xl relative overflow-hidden card-3d">
@@ -286,6 +282,12 @@
             <i data-lucide="send" class="w-4 h-4"></i>
             <span>Send 6-Digit OTP via SMS</span>
           </button>
+
+          <div class="text-center pt-1">
+            <button type="button" id="btnDirectPinOption" class="text-[11px] text-indigo-400 hover:underline font-semibold">
+              Or Reset Instantly with Security PIN (1234) &rarr;
+            </button>
+          </div>
         </form>
 
         <!-- Step 2: Verify OTP & Enter New Password (Appears after OTP is sent) -->
@@ -294,6 +296,18 @@
             <i data-lucide="smartphone" class="w-4 h-4 text-indigo-400 mt-0.5 shrink-0"></i>
             <span id="otpSentTargetText">📲 6-Digit OTP code has been dispatched to your mobile phone via SMS. Please enter the code below.</span>
           </div>
+
+          <!-- 1-Click WhatsApp Delivery Option -->
+          <a
+            id="btnWhatsAppDirectLink"
+            href="#"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition hidden"
+          >
+            <i data-lucide="message-circle" class="w-4 h-4"></i>
+            <span>📩 Open WhatsApp to View OTP Code</span>
+          </a>
 
           <div>
             <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">Enter 6-Digit OTP from Mobile SMS *</label>
@@ -344,6 +358,77 @@
             >
               <i data-lucide="check-circle" class="w-4 h-4"></i>
               <span>Verify OTP & Set New Password</span>
+            </button>
+          </div>
+
+          <div class="text-center pt-1 border-t border-slate-800/80">
+            <span class="text-[11px] text-slate-400">Didn't receive SMS?</span>
+            <button type="button" id="btnSwitchToPinReset" class="text-[11px] text-indigo-400 hover:underline font-semibold ml-1">
+              Reset with Security PIN (Default: 1234) &rarr;
+            </button>
+          </div>
+        </form>
+
+        <!-- Step 3: Instant Reset with 4-Digit Security PIN (Guaranteed instant fallback) -->
+        <form id="forgotPinResetForm" class="space-y-3.5 hidden">
+          <div class="p-3.5 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs flex items-start gap-2">
+            <i data-lucide="key" class="w-4 h-4 text-indigo-400 mt-0.5 shrink-0"></i>
+            <div>
+              <strong>Instant Reset with Security PIN:</strong>
+              <p class="text-slate-300 mt-0.5">Enter your 4-digit PIN (Default is <strong>1234</strong>) to change password instantly without waiting for SMS.</p>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">Username, Email, or Mobile Phone</label>
+            <input
+              type="text"
+              id="pinResetIdentifier"
+              required
+              placeholder="e.g. rajesh99 or your phone"
+              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700/80 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">4-Digit Security PIN (Default: 1234)</label>
+            <input
+              type="password"
+              id="pinResetCode"
+              required
+              maxlength="4"
+              value="1234"
+              placeholder="1234"
+              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700/80 text-indigo-400 font-mono text-center text-xl font-bold tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">New Password</label>
+            <input
+              type="password"
+              id="pinResetNewPassword"
+              required
+              placeholder="Enter new password"
+              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700/80 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              id="btnBackFromPinToOtp"
+              class="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+            >
+              Back to OTP
+            </button>
+            <button
+              type="submit"
+              id="btnSubmitPinReset"
+              class="flex-1 py-3 px-4 rounded-xl btn-3d text-white font-semibold text-sm flex items-center justify-center gap-2"
+            >
+              <i data-lucide="check-circle" class="w-4 h-4"></i>
+              <span>Reset Password with PIN</span>
             </button>
           </div>
         </form>

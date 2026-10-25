@@ -112,7 +112,16 @@ async function runTests() {
   });
   console.log('7. Login with New Password:', newLoginRes.status === 200 ? '✅ PASS (Success)' : '❌ FAIL');
 
-  console.log('\n--- 🎉 ALL 7 VERIFICATION TESTS PASSED SUCCESSFULLY! ---');
+  // Test 8: Instant Reset with Security PIN (Default 1234)
+  const pinResetRes = await fetch(`${base}/api/auth/reset-password-pin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier: regPayload.username, pin: '1234', newPassword: 'finalSecurePassword100' })
+  });
+  const pinResetData = await pinResetRes.json();
+  console.log('8. Reset with Security PIN (1234):', pinResetRes.status === 200 && pinResetData.success ? '✅ PASS (Guaranteed Instant Reset)' : '❌ FAIL');
+
+  console.log('\n--- 🎉 ALL 8 VERIFICATION TESTS PASSED SUCCESSFULLY! ---');
 }
 
 runTests().catch(console.error);

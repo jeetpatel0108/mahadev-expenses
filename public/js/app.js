@@ -49,21 +49,11 @@ async function authFetch(url, options = {}) {
 }
 
 // -------------------------------------------------------------
-// 3D Interactive Card Tilt
+// Card Stability (Tilt disabled for clean, rock-solid professional UI)
 // -------------------------------------------------------------
 
 function setup3DTilt() {
-  document.querySelectorAll('.card-3d').forEach(card => {
-    card.addEventListener('mousemove', (e) => {
-      const rect = card.getBoundingClientRect();
-      const x = e.clientX - rect.left - rect.width / 2;
-      const y = e.clientY - rect.top - rect.height / 2;
-      card.style.transform = `perspective(1000px) rotateY(${x / 35}deg) rotateX(${-y / 35}deg) translateY(-4px)`;
-    });
-    card.addEventListener('mouseleave', () => {
-      card.style.transform = 'perspective(1000px) rotateY(0deg) rotateX(0deg) translateY(0)';
-    });
-  });
+  // Purposefully disabled: No wobbly 3D mouse tilt, clean modern hover only
 }
 
 // -------------------------------------------------------------
@@ -106,6 +96,7 @@ function switchAuthTab(tab) {
     // Default to step 1
     document.getElementById('forgotOtpRequestForm').classList.remove('hidden');
     document.getElementById('forgotResetPasswordForm').classList.add('hidden');
+    document.getElementById('forgotPinResetForm')?.classList.add('hidden');
   }
   setupLucide();
 }
@@ -245,9 +236,24 @@ function setupAuthTabsAndForms() {
         currentForgotIdentifier = identifier;
         document.getElementById('forgotOtpRequestForm').classList.add('hidden');
         document.getElementById('forgotResetPasswordForm').classList.remove('hidden');
+        document.getElementById('forgotPinResetForm')?.classList.add('hidden');
         document.getElementById('otpSentTargetText').textContent = data.message;
         document.getElementById('otpInputCode').value = '';
-        showAuthAlert(`📲 ${data.message}`, 'success');
+
+        const waBtn = document.getElementById('btnWhatsAppDirectLink');
+        if (waBtn) {
+          if (data.whatsappUrl) {
+            waBtn.href = data.whatsappUrl;
+            waBtn.classList.remove('hidden');
+          } else {
+            waBtn.classList.add('hidden');
+          }
+        }
+
+        const pinIdentifier = document.getElementById('pinResetIdentifier');
+        if (pinIdentifier) pinIdentifier.value = identifier;
+
+        showAuthAlert(`📲 ${data.message} ${data.whatsappUrl ? '<br><span class="text-emerald-300 font-semibold">Tap the green WhatsApp button below if SMS is delayed!</span>' : ''}`, 'success');
       } else {
         showAuthAlert(data.error || 'User not found.');
       }
@@ -260,10 +266,72 @@ function setupAuthTabsAndForms() {
     }
   });
 
+  // Direct PIN Option in Step 1
+  document.getElementById('btnDirectPinOption')?.addEventListener('click', () => {
+    document.getElementById('forgotOtpRequestForm').classList.add('hidden');
+    document.getElementById('forgotResetPasswordForm').classList.add('hidden');
+    document.getElementById('forgotPinResetForm').classList.remove('hidden');
+    const idVal = document.getElementById('forgotIdentifier')?.value.trim();
+    if (idVal) document.getElementById('pinResetIdentifier').value = idVal;
+  });
+
+  // Switch to PIN Reset from Step 2
+  document.getElementById('btnSwitchToPinReset')?.addEventListener('click', () => {
+    document.getElementById('forgotOtpRequestForm').classList.add('hidden');
+    document.getElementById('forgotResetPasswordForm').classList.add('hidden');
+    document.getElementById('forgotPinResetForm').classList.remove('hidden');
+    if (currentForgotIdentifier) document.getElementById('pinResetIdentifier').value = currentForgotIdentifier;
+  });
+
+  // Back from PIN to OTP
+  document.getElementById('btnBackFromPinToOtp')?.addEventListener('click', () => {
+    document.getElementById('forgotPinResetForm').classList.add('hidden');
+    document.getElementById('forgotOtpRequestForm').classList.remove('hidden');
+  });
+
   // Back button in OTP Step 2
   document.getElementById('btnBackToOtpRequest')?.addEventListener('click', () => {
     document.getElementById('forgotOtpRequestForm').classList.remove('hidden');
     document.getElementById('forgotResetPasswordForm').classList.add('hidden');
+    document.getElementById('forgotPinResetForm')?.classList.add('hidden');
+  });
+
+  // 4.1 SUBMIT PIN RESET FORM
+  document.getElementById('forgotPinResetForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const identifier = document.getElementById('pinResetIdentifier').value.trim();
+    const pin = document.getElementById('pinResetCode').value.trim();
+    const newPassword = document.getElementById('pinResetNewPassword').value.trim();
+    const btn = document.getElementById('btnSubmitPinReset');
+
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin"></i><span>Resetting Password...</span>`;
+    setupLucide();
+
+    try {
+      const res = await fetch('/api/auth/reset-password-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier, pin, newPassword })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        showAuthAlert('🎉 ' + data.message, 'success');
+        setTimeout(() => {
+          switchAuthTab('login');
+          document.getElementById('loginUsername').value = identifier;
+        }, 1200);
+      } else {
+        showAuthAlert(data.error || 'Failed to reset password.');
+      }
+    } catch (err) {
+      showAuthAlert('Server error during PIN reset.');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4"></i><span>Reset Password with PIN</span>`;
+      setupLucide();
+    }
   });
 
   // 4. FORGOT PASSWORD: STEP 2 (RESET PASSWORD WITH OTP)
@@ -487,7 +555,7 @@ function renderDailyStatusBanner(status, settings) {
     banner.innerHTML = `
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div class="flex items-start sm:items-center gap-3.5">
-          <div class="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 badge-3d animate-bounce">
+          <div class="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 badge-3d">
             <i data-lucide="alert-triangle" class="w-5 h-5"></i>
           </div>
           <div>
