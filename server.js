@@ -280,6 +280,11 @@ app.post('/api/auth/register', (req, res) => {
 
   const cleanUsername = username.trim().toLowerCase();
   const cleanEmail = (email || '').trim().toLowerCase();
+
+  if (!cleanEmail) {
+    return res.status(400).json({ success: false, error: 'Email address is required for free OTP verification and account alerts.' });
+  }
+
   const db = getDb();
   db.users = db.users || [];
 
@@ -476,9 +481,9 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   let smsRes = null;
 
   if (user.email) {
-    emailRes = await sendEmailReminder(user.email, '🔐 Your Password Reset Code - Daily Expenses', otpMsg, otpHtml, user.settings?.smtp);
+    emailRes = await sendEmailReminder(user.email, `🔐 Your 6-Digit Password Reset Code [${otp}] - Daily Expenses`, otpMsg, otpHtml, user.settings?.smtp);
   }
-  if (user.phone) {
+  if (user.phone && (user.settings?.fast2smsApiKey || process.env.FAST2SMS_API_KEY || user.settings?.twilio?.accountSid)) {
     smsRes = await sendSmsNotification(user.phone, otpMsg, {
       fast2smsApiKey: user.settings?.fast2smsApiKey || process.env.FAST2SMS_API_KEY,
       twilio: user.settings?.twilio,
@@ -490,27 +495,22 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   const cleanPhone = (user.phone || '').replace(/[^0-9]/g, '').slice(-10);
   const maskedEmail = user.email ? user.email.replace(/^(.)(.*)(.@.*)$/, (_, a, b, c) => a + '*'.repeat(Math.max(1, b.length)) + c) : null;
   const maskedPhone = cleanPhone ? cleanPhone.replace(/(\d{2})(\d+)(\d{2})$/, (_, a, b, c) => a + '*'.repeat(Math.max(1, b.length)) + c) : null;
-  const targetDisplay = maskedPhone ? `mobile (+91 ${maskedPhone})` : (maskedEmail ? `email (${maskedEmail})` : 'registered phone');
-
-  const hasSmsGateway = Boolean(user.settings?.fast2smsApiKey || process.env.FAST2SMS_API_KEY || user.settings?.twilio?.accountSid);
 
   let messageText = '';
-  if (smsRes?.success) {
-    messageText = `6-Digit OTP verification code has been dispatched to your ${targetDisplay} via SMS!`;
-  } else if (!hasSmsGateway) {
-    messageText = `⚠️ Fast2SMS API Key required for real SMS delivery. Configure your Fast2SMS key in Settings, or use Security PIN (1234) below.`;
+  if (user.email) {
+    messageText = `6-Digit OTP verification code has been sent directly to your email (${maskedEmail})! Please check your inbox or spam folder.`;
   } else {
-    messageText = `SMS Gateway Error: ${smsRes?.error || 'Unable to deliver SMS'}. You can also use Security PIN (1234) below.`;
+    messageText = `No email found for this account. Please use Security PIN (1234) below to reset your password.`;
   }
 
   res.json({
     success: true,
     message: messageText,
+    emailDelivered: Boolean(emailRes?.success),
     smsDelivered: Boolean(smsRes?.success),
     phone: cleanPhone,
     maskedEmail,
     maskedPhone,
-    hasSmsGateway,
     previewUrl: emailRes?.previewUrl || null
   });
 });

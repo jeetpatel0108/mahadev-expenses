@@ -69,23 +69,24 @@ async function runTests() {
   console.log('3. Data Isolation Check:');
   console.log('   - Did admin see jeet\'s expense?:', foundJeetExpense, !foundJeetExpense ? '✅ PASS (100% Isolated)' : '❌ FAIL');
 
-  // Test 4: Forgot Password Flow with 6-Digit OTP Dispatched via SMS
+  // Test 4: Forgot Password Flow with 6-Digit OTP Dispatched via 100% Free Email
   const forgotRes = await fetch(`${base}/api/auth/forgot-password`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ identifier: regPayload.username })
   });
   const forgotData = await forgotRes.json();
-  console.log('4. Forgot Password OTP Request:');
+  console.log('4. Forgot Password Email OTP Request:');
   console.log('   - Status:', forgotRes.status);
   console.log('   - Message:', forgotData.message);
+  console.log('   - Email Delivered:', forgotData.emailDelivered);
   console.log('   - Simulated OTP Leaked in API?:', Boolean(forgotData.simulatedOtp), !forgotData.simulatedOtp ? '✅ PASS (Protected, Not Exposed on Screen)' : '❌ FAIL (Security Leak)');
 
-  // Retrieve OTP securely from database as simulating delivery to the user's phone via SMS
+  // Retrieve OTP securely from database as simulating delivery to the user's email
   const dbData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'db.json'), 'utf8'));
   const userOtpRecord = (dbData.otps || []).find(o => o.userId === regData.user.id && !o.used);
   const otp = userOtpRecord ? userOtpRecord.otp : null;
-  console.log('   - OTP received at user phone:', otp ? `✅ ${otp}` : '❌ NOT FOUND');
+  console.log('   - OTP received at user email:', otp ? `✅ ${otp}` : '❌ NOT FOUND');
 
   // Test 5: Verify Invalid OTP is rejected
   const badOtpRes = await fetch(`${base}/api/auth/verify-otp`, {

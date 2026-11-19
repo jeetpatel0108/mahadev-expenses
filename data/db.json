@@ -261,6 +261,62 @@
         ]
       },
       "createdAt": "2026-10-25T08:40:00.107Z"
+    },
+    {
+      "id": "usr_1795105836785_kds3",
+      "name": "Jeet Patel",
+      "username": "jeet_test_1795105836537",
+      "email": "jeet1795105836538@example.com",
+      "phone": "+919876500000",
+      "password": "finalSecurePassword100",
+      "securityPin": "1234",
+      "budget": {
+        "initialAmount": 45000,
+        "currency": "₹",
+        "currencyCode": "INR",
+        "month": "Monthly Budget",
+        "notes": "Initial Allowance"
+      },
+      "settings": {
+        "reminderEnabled": true,
+        "reminderTime": "20:30",
+        "recipientEmail": "jeet1795105836538@example.com",
+        "recipientPhone": "+919876500000",
+        "notifyEmail": true,
+        "notifySms": true,
+        "notifyBrowser": true,
+        "smtp": {
+          "host": "",
+          "port": 587,
+          "secure": false,
+          "user": "",
+          "pass": "",
+          "from": "Daily Expenses <no-reply@expensetracker.local>"
+        },
+        "twilio": {
+          "accountSid": "",
+          "authToken": "",
+          "fromPhone": ""
+        },
+        "lastReminderSentDate": null,
+        "reminderHistory": [
+          {
+            "id": "sms_1795105836877",
+            "timestamp": "2026-11-19T16:30:36.877Z",
+            "type": "EXPENSE_LOG_SMS",
+            "recipientPhone": "+919876500000",
+            "messageText": "YOUR EXPENSE OF TODAY IS LOCKED AND AVAILABLE BALANCE IS ₹43,500",
+            "smsResult": {
+              "success": false,
+              "mode": "gateway_key_required",
+              "recipient": "+919876500000",
+              "text": "YOUR EXPENSE OF TODAY IS LOCKED AND AVAILABLE BALANCE IS ₹43,500",
+              "error": "Fast2SMS API Key is required to send real cellular SMS to Indian mobile numbers."
+            }
+          }
+        ]
+      },
+      "createdAt": "2026-11-19T16:30:36.785Z"
     }
   ],
   "otps": [
@@ -294,6 +350,14 @@
       "identifier": "jeet_test_1792917599574",
       "otp": "595921",
       "expiresAt": 1792918200171,
+      "used": true
+    },
+    {
+      "id": "otp_1795105836905",
+      "userId": "usr_1795105836785_kds3",
+      "identifier": "jeet_test_1795105836537",
+      "otp": "188199",
+      "expiresAt": 1795106436905,
       "used": true
     }
   ],
@@ -341,6 +405,17 @@
       "date": "2026-10-25",
       "time": "14:10",
       "createdAt": "2026-10-25T08:40:00.128Z"
+    },
+    {
+      "id": "exp_1795105836816_m5az",
+      "userId": "usr_1795105836785_kds3",
+      "amount": 1500,
+      "category": "Event Expenses",
+      "paymentMode": "UPI",
+      "notes": "Stage Lighting Advance",
+      "date": "2026-11-19",
+      "time": "22:00",
+      "createdAt": "2026-11-19T16:30:36.816Z"
     }
   ],
   "reports": []

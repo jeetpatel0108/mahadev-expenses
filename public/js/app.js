@@ -240,10 +240,21 @@ function setupAuthTabsAndForms() {
         document.getElementById('otpSentTargetText').textContent = data.message;
         document.getElementById('otpInputCode').value = '';
 
+        const previewContainer = document.getElementById('emailPreviewContainer');
+        const previewLink = document.getElementById('btnOpenEmailPreview');
+        if (previewContainer && previewLink) {
+          if (data.previewUrl) {
+            previewLink.href = data.previewUrl;
+            previewContainer.classList.remove('hidden');
+          } else {
+            previewContainer.classList.add('hidden');
+          }
+        }
+
         const pinIdentifier = document.getElementById('pinResetIdentifier');
         if (pinIdentifier) pinIdentifier.value = identifier;
 
-        showAuthAlert(`📲 ${data.message}`, data.smsDelivered !== false ? 'success' : 'error');
+        showAuthAlert(`📩 ${data.message}`, 'success');
       } else {
         showAuthAlert(data.error || 'User not found.');
       }
@@ -251,7 +262,7 @@ function setupAuthTabsAndForms() {
       showAuthAlert('Failed to send OTP code.');
     } finally {
       btn.disabled = false;
-      btn.innerHTML = `<i data-lucide="send" class="w-4 h-4"></i><span>Send 6-Digit OTP</span>`;
+      btn.innerHTML = `<i data-lucide="send" class="w-4 h-4"></i><span>Send 6-Digit OTP via Email</span>`;
       setupLucide();
     }
   });
